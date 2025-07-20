@@ -88,11 +88,13 @@ class Server:
 
     # ▒▒▒ connection handler ▒▒▒
     async def handle_client(self, reader: asyncio.StreamReader,
-                            writer: asyncio.StreamWriter) -> None:
+                        writer: asyncio.StreamWriter) -> None:
+        cn = "UNKNOWN"
         try:
             peername = writer.get_extra_info("peername")[0]
             cert = writer.get_extra_info("peercert")
             cn = cert["subject"][0][0][1] if cert else "UNKNOWN"
+
             if len(self.clients) >= MAX_USERS:
                 writer.close()
                 await writer.wait_closed()
@@ -101,7 +103,11 @@ class Server:
             info = ClientInfo(reader=reader, writer=writer, cn=cn, ip=peername)
             self.clients[cn] = info
             self.log(f"+ {cn} @ {peername}")
-            await self.broadcast_user_list()
+
+            await self.broadcast_user_list()  # broadcast on new connection
+
+            if self.debug:
+                self.print_user_table()
 
             # ── Protocol: line-delimited JSON messages ────────────────────
             while True:
@@ -110,11 +116,17 @@ class Server:
                     break
                 try:
                     msg = json.loads(raw.decode())
+
+                    # Handle init message specially before broadcast
                     if msg.get("type") == "init":
-                        self.clients[cn].cn = msg.get("name", cn)  # update display name
+                        # Update client info
+                        self.clients[cn].cn = msg.get("name", cn)
                         self.clients[cn].ip = msg.get("ip", peername)
                         await self.broadcast_user_list()
-                        continue  # do not forward this message to others
+                        continue  # don't forward 'init' to others
+
+                    # Broadcast other messages to all except sender
+                    await self.broadcast(msg, exclude=cn)
 
                 except Exception as exc:
                     self.log(f"[WARN] bad msg from {cn}: {exc}")
@@ -124,24 +136,27 @@ class Server:
         except Exception as e:
             self.log(f"[ERR] {e}")
         finally:
-            # Clean-up
+            # Clean-up client on disconnect
             self.clients.pop(cn, None)
             try:
-                writer.write_eof()  # if supported
+                writer.write_eof()  # optional, may not be supported
             except Exception:
-                pass  # Not supported on all transports
+                pass
 
             try:
                 await writer.drain()
                 writer.close()
                 await writer.wait_closed()
             except Exception as e:
-                print(f"[WARN] Close error: {e}")
+                self.log(f"[WARN] Close error: {e}")
 
+            # Broadcast updated user list after disconnect
             await self.broadcast_user_list()
+
             self.log(f"- {cn}")
             if self.debug:
                 self.print_user_table()
+
 
     # ▒▒▒ broadcast user list ▒▒▒
     async def broadcast_user_list(self):
