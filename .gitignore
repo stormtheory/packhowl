@@ -1,0 +1,15 @@
+# Virtual environment
+.venv/
+
+# Private/Secret data files and directories
+data/
+certs/
+generate_keys.sh
+config.py
+common.py
+
+# Python Stuff
+__pycache__
+core/__pycache__
+utils/__pycache__
+modules/__pycache__
