@@ -98,7 +98,12 @@ class NetThread(QtCore.QThread):
         self.status.emit("[OK] connected")
 
         # Send "hello" with display_name
-        hello = {"type": "hello", "display_name": self.settings["display_name"]}
+        hello = {
+                "type": "init",
+                "name": self.settings["display_name"],
+                "ip": socket.gethostbyname(socket.gethostname())  # add IP if needed
+            }
+
         writer.write((json.dumps(hello) + "\n").encode())
         await writer.drain()
 
@@ -114,8 +119,18 @@ class NetThread(QtCore.QThread):
                 # TODO: audio payloads, control frames, etc.
 
         self.status.emit("[WARN] server closed connection")
-        writer.close()
-        await writer.wait_closed()
+        try:
+            writer.write_eof()  # if supported
+        except Exception:
+            pass  # Not supported on all transports
+
+        try:
+            await writer.drain()
+            writer.close()
+            await writer.wait_closed()
+        except Exception as e:
+            print(f"[WARN] Close error: {e}")
+
 
 ###############################################################################
 # ─── Main Window ───────────────────────────────────────────────────────────
@@ -196,14 +211,32 @@ class MainWindow(QtWidgets.QWidget):
     def update_users(self, users: list):
         self.users.clear()
         for u in users:
-            item = QtWidgets.QTreeWidgetItem(
-                ["🟢" if u.get("tx") else "🔴" if u.get("muted") else " ", 
-                 u["name"], u["ip"]]
-            )
+            name = u["name"]
+            if name == self.settings["display_name"]:
+                name += " (you)"
+
+            # Status indicator: tx (talking), muted, default
+            status_icon = "🟢" if u.get("tx") else "🔴" if u.get("muted") else " "
+
+            item = QtWidgets.QTreeWidgetItem([status_icon, name, u["ip"]])
             self.users.addTopLevelItem(item)
 
+
     def add_chat(self, msg: dict):
-        self.chat_view.append(f"<b>{msg['name']}</b>: {msg['text']}")
+        # Handle incoming messages from the server
+        try:
+            if msg.get("type") == "chat":
+                # Safe handling of expected chat messages
+                self.chat_view.append(
+                    f"<b>{msg.get('name', 'Unknown')}</b>: {msg.get('text', '')}"
+                )
+            else:
+                # Unexpected message type — log it for debugging
+                print(f"⚠️ Unexpected message type or format: {msg}")
+        except Exception as e:
+            # Catch unexpected structure or other runtime issues
+            print(f"❌ Error processing message: {e} | Raw: {msg}")
+
 
     # ── chat send ────────────────────────────────────────────────────────
     def send_chat(self):
