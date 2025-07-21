@@ -1,7 +1,7 @@
 from pathlib import Path
 
 # Written by StormTheory
-# https://github.com/stormtheory/silent-link
+# https://github.com/stormtheory/packhowl
 
 # ─── Silent Link Configuration ────────────────────────────────────────────────
 APP_NAME        = "Pack Howl"
