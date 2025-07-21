@@ -6,16 +6,16 @@ Silent Link – secure voice/chat server
 • Drops clients with unknown certificates
 """
 
-import argparse, asyncio, json, ssl, time
+import argparse, asyncio, json, ssl, time, base64
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Dict
 from common import (SERVER_BIND, SSL_CERT_PATH, SSL_CA_PATH, MAX_USERS,
                     ensure_data_dirs)
 from common import SERVER_PORT as PORT
-import argparse
 import logging
 
+# ── Argument parser for debug mode ──────────────────────────────────────────
 parser = argparse.ArgumentParser()
 parser.add_argument("-d", "--debug", action='store_true', help='Run GUI in debug mode')
 args = parser.parse_args()
@@ -27,11 +27,9 @@ if args.debug:
 else:
     logger.setLevel(logging.INFO)     # INFO, DEBUG
 
-
-
 logging.debug(f"CERT: {SSL_CERT_PATH}, CA: {SSL_CA_PATH}")
 
-
+# ── Helper: get user list (used in UI broadcast) ────────────────────────────
 def get_user_list(self) -> list[dict]:
     """Build list of connected users with display name and IP."""
     return [{"name": c.cn, "ip": c.ip} for c in self.clients.values()]
@@ -59,7 +57,7 @@ class Server:
         self.clients: Dict[str, ClientInfo] = {}  # key = CN
 
         # --- Configure SSL context (server side, mutual TLS) --------------
-       # 🔐 Create hardened TLS server context
+        # 🔐 Create hardened TLS server context
         self.ssl_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
 
         # Load server certificate (combined .pem with cert + key)
@@ -100,11 +98,10 @@ class Server:
 
         # Optional: restrict to TLS 1.2 ciphers if TLS 1.3 is not available
         self.ssl_ctx.set_ciphers("ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384")
-        
 
     # ▒▒▒ connection handler ▒▒▒
     async def handle_client(self, reader: asyncio.StreamReader,
-                        writer: asyncio.StreamWriter) -> None:
+                            writer: asyncio.StreamWriter) -> None:
         cn = "UNKNOWN"
         try:
             peername = writer.get_extra_info("peername")[0]
@@ -141,8 +138,17 @@ class Server:
                         await self.broadcast_user_list()
                         continue  # don't forward 'init' to others
 
-                    # Broadcast other messages to all except sender
-                    await self.broadcast(msg, exclude=cn)
+                    # Handle Opus audio frame forwarding
+                    elif msg.get("type") == "audio":
+                        # Must contain 'frame' and 'from'
+                        if "frame" in msg and "from" in msg:
+                            await self.broadcast(msg, exclude=cn)
+                        else:
+                            self.log(f"[WARN] invalid audio msg from {cn}")
+
+                    # Handle chat or control messages
+                    else:
+                        await self.broadcast(msg, exclude=cn)
 
                 except Exception as exc:
                     self.log(f"[WARN] bad msg from {cn}: {exc}")
@@ -173,7 +179,6 @@ class Server:
             if self.debug:
                 self.print_user_table()
 
-
     # ▒▒▒ broadcast user list ▒▒▒
     async def broadcast_user_list(self):
         """Send the updated user list to all connected clients."""
@@ -196,7 +201,6 @@ class Server:
                 await client.writer.drain()
             except Exception as e:
                 self.log(f"[WARN] Failed to send user list to {client.cn}: {e}")
-
 
     # ▒▒▒ broadcast helper ▒▒▒
     async def broadcast(self, msg: dict, exclude: str | None = None) -> None:
@@ -228,9 +232,8 @@ class Server:
         )
         addr = ", ".join(str(sock.getsockname()) for sock in server.sockets)
         self.log(f"[SILENT LINK] serving on {addr}")
-        
-        #logging.debug(f"🔐 TLS version: {conn.version()}, cipher: {conn.cipher()}")
 
+        #logging.debug(f"🔐 TLS version: {conn.version()}, cipher: {conn.cipher()}")
 
         async with server:
             await server.serve_forever()

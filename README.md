@@ -1,6 +1,12 @@
 # Silent Link
 
-Encrypted, private voice + chat client and server written in Python 3.12 using PySide6, sounddevice, and TLS 1.3 mutual auth.
+Encrypted, private voice + chat client and server written in Python 3.12 using PySide6, sounddevice, and TLS mutual auth.
+
+✅ Private, secure, self-hosted, and no third parties
+✅ Secure, TLS-only, within your trusted enclave with shared Auth certs
+✅ Clients send encoded PCM with Opus to the server via TLS encrypted tunnel and server only forwards to other clients
+✅ Low Server CPU and memory use.
+✅ Binary-safe Opus forwarding supported using opuslib encoder/decoder
 
 # In the Works:
 Guiding Principle(s):
