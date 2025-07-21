@@ -266,17 +266,25 @@ class AudioEngine(QtCore.QObject):
             self.inputLevel.emit(rms / 32768.0)
 
             if self.vox_enabled:
-                new_vox = rms >= self.vox_threshold
+                new_vox = bool(rms >= self.vox_threshold)
                 if new_vox != self.vox_active:
                     self.vox_active = new_vox
                     self.voxActivity.emit(new_vox)
                 if not new_vox:
                     logging.debug("[Audio][_input_callback] VOX enabled but no voice detected, skipping frame")
+                    return  # Skip sending audio because VOX inactive
+
+            elif self.ptt_enabled:
+                # If PTT enabled but not pressed, skip sending audio
+                if not self.ptt_pressed:
+                    logging.debug("[Audio][_input_callback] PTT enabled but not pressed, skipping frame")
                     return
             else:
+                # Open Mic mode — always send audio, reset VOX state if needed
                 if self.vox_active:
                     self.vox_active = False
                     self.voxActivity.emit(False)
+
 
             # Check PTT
             if self.ptt_enabled and not self.ptt_pressed:
