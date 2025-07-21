@@ -8,7 +8,8 @@ import opuslib
 import sounddevice as sd
 import samplerate
 import logging
-
+import time
+from PySide6.QtCore import QMetaObject, Qt, Slot  # near other QtCore imports
 from PySide6 import QtCore  # Added for Qt signal support
 logging.basicConfig(level=logging.DEBUG, format='%(levelname)s: %(message)s')
 
@@ -38,6 +39,8 @@ class AudioEngine(QtCore.QObject):
     voxActivity = QtCore.Signal(bool)          # True = voice active
     inputLevel = QtCore.Signal(float)          # Mic level (RMS)
     outputLevel = QtCore.Signal(float)  # Speaker output level (RMS)
+    incomingAudio = QtCore.Signal(str)  # new signal for queuing audio safely
+
 
 
     SAMPLE_RATE = 48000          # Opus standard sample rate
@@ -51,6 +54,7 @@ class AudioEngine(QtCore.QObject):
         self.net_thread = net_thread
         self.status_callback = status_callback  # Optional UI-bound logger
 
+        self.incomingAudio.connect(self.queue_incoming_audio)
 
         # Create Opus encoder and decoder instances
         self.encoder = opuslib.Encoder(
@@ -135,6 +139,11 @@ class AudioEngine(QtCore.QObject):
     # ── Start the audio subsystem: open streams & launch worker thread ──────
     def start(self):
         logging.debug("[Audio] Entering start()")
+        if self.stream_in or self.stream_out:
+            logging.debug("[Audio] Restart requested — stopping old streams")
+            self.stop()
+            time.sleep(0.2)  # allow OS to release device
+       
         """
         Opens input/output streams at the closest-supported device rate.
         Resamples to 48 kHz for Opus if the device can’t do 48 kHz natively.
@@ -147,8 +156,7 @@ class AudioEngine(QtCore.QObject):
         
         logging.debug(f"[Audio] Input stream device index: {in_idx}")
         logging.debug(f"[Audio] Output stream device index: {out_idx}")
-
-
+        
         # ── Validate actual working samplerates ─────────────────────────────
         try:
             self.dev_in_rate = self._find_compatible_samplerate(in_idx, is_input=True)
@@ -329,6 +337,7 @@ class AudioEngine(QtCore.QObject):
             logging.warning(f"Audio decoding error: {e}")
             outdata.fill(0)  # Output silence on error
 
+    @Slot(str)
     def queue_incoming_audio(self, opus_hex):
         """
         Called from GUI thread to queue incoming audio packets for playback.
@@ -375,14 +384,9 @@ class AudioEngine(QtCore.QObject):
         with self.lock:
             self.loopback_enabled = enabled
             
-    def enqueue_audio_threadsafe(self, opus_hex):
-        QMetaObject.invokeMethod(
-            self,
-            "queue_incoming_audio",
-            Qt.QueuedConnection,
-            # Pass as tuple of QVariant-compatible types
-            (opus_hex,)
-        )
+    def enqueue_audio_threadsafe(self, opus_hex: str):
+        self.incomingAudio.emit(opus_hex)
+
 
     # ─── Setters to update mute/mode flags from GUI controls ───────────────
     def set_mic_muted(self, muted):

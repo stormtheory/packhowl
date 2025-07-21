@@ -5,7 +5,7 @@ import socket
 import asyncio
 import json
 import traceback
-
+import logging
 
 from PySide6 import QtCore
 
@@ -14,7 +14,7 @@ from client.settings import Settings
 from config import (APP_NAME, APP_ICON_PATH, CLIENT_IP, SSL_CA_PATH, CERTS_DIR,
                     DATA_DIR, ensure_data_dirs)
 from config import SERVER_PORT as DEFAULT_SERVER_PORT
-
+logging.basicConfig(level=logging.DEBUG, format='%(levelname)s: %(message)s')
 
 
 ###############################################################################
@@ -123,15 +123,33 @@ class NetworkThread(QtCore.QThread):
         # main RX loop
         while not reader.at_eof() and not self._stop:
             line = await reader.readline()
-            if not line:
+            if not line or self._stop:
                 break
             msg = json.loads(line.decode())
-            match msg.get("type"):
-                case "userlist": self.userlist.emit(msg["users"])
-                case "chat":     self.chatmsg.emit(msg)
-                # TODO: audio payloads, control frames, etc.
+            msg_type = msg.get("type")
 
-        send_task.cancel()  # cleanup on disconnect
+            # Handle incoming audio packets
+            if msg_type == "audio" and hasattr(self, "audio_engine"):
+                logging.debug(f"[Net RX] Received audio packet: {len(msg['data']) // 2} bytes")
+                self.audio_engine.enqueue_audio_threadsafe(msg["data"])
+                continue  # skip further processing for this packet
+
+            # Handle other known message types
+            match msg_type:
+                case "userlist":
+                    self.userlist.emit(msg["users"])
+                case "chat":
+                    self.chatmsg.emit(msg)
+                case _:
+                    logging.debug(f"[Net RX] Unknown message type: {msg_type}")
+
+
+        send_task.cancel()
+        try:
+            await send_task
+        except asyncio.CancelledError:
+            pass
+
 
         self.status.emit("[WARN] server closed connection")
         try:
@@ -146,17 +164,19 @@ class NetworkThread(QtCore.QThread):
             print(f"[WARN] Close error: {e}")
 
     async def _send_outgoing(self, writer):
-        """
-        Background coroutine that drains outbound_queue and writes messages to TLS socket.
-        """
         try:
             while not self._stop:
                 msg = await self.outbound_queue.get()
+
+                if msg.get("type") == "audio":
+                    logging.debug(f"[Net TX] Sending audio packet ({len(msg['data']) // 2} bytes)")
+
                 writer.write((json.dumps(msg) + "\n").encode())
                 await writer.drain()
                 self.outbound_queue.task_done()
         except asyncio.CancelledError:
-            pass  # Normal on cancellation
+            pass
+
 
     def queue_message(self, msg: dict):
         """
