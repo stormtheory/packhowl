@@ -8,7 +8,7 @@ APP_NAME        = "Silent Link"
 APP_ICON_PATH   = "assets/icon.png"         # 🔔 Used by client tray
 
 # ─── Networking ───────────────────────────────────────────────────────────────
-PORT            = 50443
+SERVER_PORT     = 50443
 SERVER_BIND     = "0.0.0.0"                 # Server binds to all interfaces
 CLIENT_IP       = "0.0.0.0"                 # Client binds to all interfaces (can be overridden)
 
