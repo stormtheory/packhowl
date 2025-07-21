@@ -2,15 +2,13 @@
 
 Encrypted, private voice + chat client and server written in Python 3.12 using PySide6, sounddevice, and TLS mutual auth.
 
-✅ Private, secure, self-hosted, and no third parties
-✅ Secure, TLS-only, within your trusted enclave with shared Auth certs
-✅ Clients send encoded PCM with Opus to the server via TLS encrypted tunnel and server only forwards to other clients
-✅ Low Server CPU and memory use.
-✅ Binary-safe Opus forwarding supported using opuslib encoder/decoder
+<img width="960" height="528" alt="Image" src="https://github.com/user-attachments/assets/a0ecd737-322c-4bc7-951b-c6976737528d" />
 
-
-<img width="960" height="528" alt="Image" src="https://github.com/user-attachments/assets/13e3895f-c1c2-4cab-9111-c14b3f87bed6" />
-
+- ✅ Private, secure, self-hosted, and no third parties.
+- ✅ Secure, TLS-only, within your trusted enclave with shared Auth certs.
+- ✅ Clients send encoded PCM with Opus to the server via TLS encrypted tunnel and server only forwards to other clients.
+- ✅ Low Server CPU and memory use.
+- ✅ Binary-safe Opus forwarding supported using opuslib encoder/decoder.
 
 # In the Works:
 Guiding Principle(s):
