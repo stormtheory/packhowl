@@ -131,6 +131,11 @@ if [ "$PIP_INSTALL" == True ];then
 
         ### Audio/Voice
         pip install sounddevice
+	pip install numpy
+        pip install samplerate
+
+        ### Encoding
+        pip install opuslib
 
 
 touch $PYENV_DIR/$RUN
@@ -140,6 +145,7 @@ fi
 
 #### Run the Box
         source $PYENV_DIR/bin/activate
+        
 if [ $DEBUG == true ];then
 	#### Export Variables
 		export PYTHONWARNINGS="ignore"

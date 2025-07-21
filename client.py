@@ -1,25 +1,23 @@
 #!/usr/bin/env python3.12
-"""
-Silent Link – minimal PySide6 client shell
-• First-run wizard collects Display Name + Server IP
-• System tray icon, hide-on-close behavior
-• Background QThread handles TLS networking & auto-reconnect
-• Placeholders for audio send/receive via sounddevice
-"""
-
-import json, sys, ssl, asyncio, traceback
-from functools import partial
+# client.py
+from PySide6 import QtWidgets
+import sys
+import asyncio
+import json
 from typing import Optional
 
-from PySide6 import QtWidgets, QtGui, QtCore
-from common import (APP_NAME, APP_ICON_PATH, CLIENT_IP, SSL_CA_PATH, CERTS_DIR,
+import ipaddress
+from client.settings import Settings
+from client.network import NetworkThread
+from client.audio_engine import AudioEngine
+from client.gui import MainWindow
+
+from config import (APP_NAME, APP_ICON_PATH, CLIENT_IP, SSL_CA_PATH, CERTS_DIR,
                     DATA_DIR, ensure_data_dirs)
-from common import SERVER_PORT as DEFAULT_SERVER_PORT
-from settings import Settings
+from config import SERVER_PORT as DEFAULT_SERVER_PORT
 import socket
 import argparse
 import logging
-import json
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-d", "--debug", action='store_true', help='Run GUI in debug mode')
@@ -33,14 +31,21 @@ else:
     logger.setLevel(logging.INFO)     # INFO, DEBUG
 
 
-CLIENT_CERT_PATH = CERTS_DIR / f"{socket.gethostname()}.pem"
 
-###############################################################################
-# ─── ERROR CHECK ────────────────────────────────────────────────────────────
-###############################################################################
+"""
+Main client script for Silent Link
+• Starts Qt application with PySide6
+• Loads settings
+• Initializes network thread, audio engine, and GUI
+• Handles graceful shutdown
+"""
 
-if not CLIENT_CERT_PATH.exists():
-    raise FileNotFoundError(f"Client cert not found: {CLIENT_CERT_PATH}")
+
+
+import os
+# especially needed on Wayland (e.g. GNOME, KDE) where Qt apps may silently fail to show windows under certain themes or missing dependencies
+os.environ["QT_QPA_PLATFORM"] = "xcb"
+
 
 ###############################################################################
 # ─── UI helpers ─────────────────────────────────────────────────────────────
@@ -55,15 +60,47 @@ class FirstRunDialog(QtWidgets.QDialog):
 
         self.name_edit = QtWidgets.QLineEdit()
         self.ip_edit = QtWidgets.QLineEdit()
-        self.port_edit = QtWidgets.QLineEdit(str(DEFAULT_SERVER_PORT))  # default port pre-filled
+        self.port_edit = QtWidgets.QLineEdit(str(DEFAULT_SERVER_PORT))
 
         form.addRow("Display Name:", self.name_edit)
         form.addRow("Server IP:", self.ip_edit)
         form.addRow("Server Port:", self.port_edit)
 
-        btn = QtWidgets.QPushButton("Save")
-        btn.clicked.connect(self.accept)
-        form.addRow(btn)
+        self.save_btn = QtWidgets.QPushButton("Save")
+        self.save_btn.clicked.connect(self.accept)
+        self.save_btn.setEnabled(False)
+        form.addRow(self.save_btn)
+
+        # Real-time validation
+        self.name_edit.textChanged.connect(self.validate)
+        self.ip_edit.textChanged.connect(self.validate)
+        self.port_edit.textChanged.connect(self.validate)
+
+    def validate(self):
+        name = self.name_edit.text().strip()
+        ip = self.ip_edit.text().strip()
+        port = self.port_edit.text().strip()
+
+        # Name: 1–32 chars, letters, numbers, spaces only
+        valid_name = 1 <= len(name) <= 32 and all(c.isalnum() or c.isspace() for c in name)
+
+        # IP: use ipaddress for strict validation fallback
+        try:
+            ipaddress.ip_address(ip)
+            valid_ip = True
+        except ValueError:
+            valid_ip = False
+
+        # Port: integer 1–65535
+        try:
+            p = int(port)
+            valid_port = 1 <= p <= 65535
+        except ValueError:
+            valid_port = False
+
+        is_valid = valid_name and valid_ip and valid_port
+
+        self.save_btn.setEnabled(is_valid)
 
     @property
     def display_name(self):
@@ -84,219 +121,9 @@ class FirstRunDialog(QtWidgets.QDialog):
             pass
         return None
 
-###############################################################################
-# ─── Networking Thread ─────────────────────────────────────────────────────
-###############################################################################
-
-class NetThread(QtCore.QThread):
-    """Runs asyncio TLS client loop without blocking the Qt event loop."""
-    status = QtCore.Signal(str)          # emits status/info lines
-    userlist = QtCore.Signal(list)       # emits current userlist (list[dict])
-    chatmsg  = QtCore.Signal(dict)       # emits chat messages
-
-    def __init__(self, settings: Settings):
-        super().__init__()
-        self.settings = settings
-        self._stop = False
-        global SERVER_PORT
-        SERVER_PORT = self.settings["server_port"]
-
-    def run(self):
-        asyncio.run(self._main())
-
-    async def _main(self):
-        while not self._stop:
-            try:
-                await self._connect_and_loop()
-            except Exception as e:
-                self.status.emit(f"[ERR] {e}")
-                traceback.print_exc()
-            # Auto-reconnect with back-off
-            for i in range(5, 0, -1):
-                if self._stop: return
-                self.status.emit(f"[INFO] reconnect in {i}s")
-                await asyncio.sleep(1)
-
-    async def _connect_and_loop(self):
-        ip = self.settings["server_ip"]
-        self.status.emit(f"[INFO] connecting to {ip}:{SERVER_PORT}")
-
-        # Build TLS context (client side, mutual auth)
-        ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
-        ctx.load_verify_locations(cafile=str(SSL_CA_PATH))
-        ctx.load_cert_chain(certfile=str(CLIENT_CERT_PATH))  # your `client.pem`
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_REQUIRED
-
-        # NOTE: load client cert/key here if you require client auth
-        reader, writer = await asyncio.open_connection(
-            host=ip, port=SERVER_PORT, ssl=ctx, local_addr=(CLIENT_IP, 0)
-        )
-        self.status.emit("[OK] connected")
-
-        # Send "hello" with display_name
-        hello = {
-                "type": "init",
-                "name": self.settings["display_name"],
-                "ip": socket.gethostbyname(socket.gethostname())  # add IP if needed
-            }
-
-        writer.write((json.dumps(hello) + "\n").encode())
-        await writer.drain()
-
-        # Main Rx loop
-        while not reader.at_eof():
-            line = await reader.readline()
-            if not line:
-                break
-            msg = json.loads(line.decode())
-            match msg.get("type"):
-                case "userlist": self.userlist.emit(msg["users"])
-                case "chat":     self.chatmsg.emit(msg)
-                # TODO: audio payloads, control frames, etc.
-
-        self.status.emit("[WARN] server closed connection")
-        try:
-            writer.write_eof()  # if supported
-        except Exception:
-            pass  # Not supported on all transports
-
-        try:
-            await writer.drain()
-            writer.close()
-            await writer.wait_closed()
-        except Exception as e:
-            print(f"[WARN] Close error: {e}")
-
-
-###############################################################################
-# ─── Main Window ───────────────────────────────────────────────────────────
-###############################################################################
-
-class MainWindow(QtWidgets.QWidget):
-    def __init__(self, settings: Settings):
-        super().__init__()
-        self.settings = settings
-        self.setWindowTitle(APP_NAME)
-        self.setWindowIcon(QtGui.QIcon(APP_ICON_PATH))
-        self.resize(640, 400)
-
-        # ── Left pane (server + user list + status) ───────────────────────
-        left_layout = QtWidgets.QVBoxLayout()
-        self.server_lbl = QtWidgets.QLabel()
-        self.users = QtWidgets.QTreeWidget()
-        self.users.setHeaderLabels(["🟢", "Name", "IP"])
-        self.status = QtWidgets.QListWidget()
-        left_layout.addWidget(self.server_lbl)
-        left_layout.addWidget(self.users, 3)
-        left_layout.addWidget(QtWidgets.QLabel("Status / Errors"))
-        left_layout.addWidget(self.status, 1)
-
-        # ── Right pane (chat) ─────────────────────────────────────────────
-        right_layout = QtWidgets.QVBoxLayout()
-        self.chat_view = QtWidgets.QTextBrowser()
-        bottom = QtWidgets.QHBoxLayout()
-        self.chat_edit = QtWidgets.QLineEdit()
-        send_btn = QtWidgets.QPushButton("Send")
-        bottom.addWidget(self.chat_edit, 1)
-        bottom.addWidget(send_btn)
-        right_layout.addWidget(self.chat_view, 3)
-        right_layout.addLayout(bottom)
-        # (audio controls UI omitted for brevity – add later)
-
-        # ── Combine panes ────────────────────────────────────────────────
-        splitter = QtWidgets.QSplitter()
-        lbox = QtWidgets.QWidget(); lbox.setLayout(left_layout)
-        rbox = QtWidgets.QWidget(); rbox.setLayout(right_layout)
-        splitter.addWidget(lbox)
-        splitter.addWidget(rbox)
-        h = QtWidgets.QHBoxLayout(self)
-        h.addWidget(splitter)
-
-        # ── System tray ──────────────────────────────────────────────────
-        tray = QtWidgets.QSystemTrayIcon(QtGui.QIcon(APP_ICON_PATH), self)
-        menu = QtWidgets.QMenu()
-        menu.addAction("Show", self.showNormal)
-        menu.addAction("Quit", QtWidgets.QApplication.quit)
-        tray.setContextMenu(menu)
-        tray.activated.connect(lambda _=None: self.showNormal())
-        tray.show()
-        self.tray = tray
-
-        # ── Net thread ───────────────────────────────────────────────────
-        self.net = NetThread(settings)
-        self.net.status.connect(self.add_status)
-        self.net.userlist.connect(self.update_users)
-        self.net.chatmsg.connect(self.add_chat)
-        self.net.start()
-
-        # ── Signals ──────────────────────────────────────────────────────
-        send_btn.clicked.connect(self.send_chat)
-        self.chat_edit.returnPressed.connect(send_btn.click)
-
-        self.update_server_label()
-
-    # ── UI updates ───────────────────────────────────────────────────────
-    def update_server_label(self):
-        ip = self.settings["server_ip"]
-        self.server_lbl.setText(f"🔗 Server: {ip}:{SERVER_PORT}")
-
-    def add_status(self, line: str):
-        self.status.addItem(line)
-        self.status.scrollToBottom()
-
-    def update_users(self, users: list):
-        self.users.clear()
-        for u in users:
-            name = u["name"]
-            if name == self.settings["display_name"]:
-                name += " (you)"
-
-            # Status indicator: tx (talking), muted, default
-            status_icon = "🟢" if u.get("tx") else "🔴" if u.get("muted") else " "
-
-            item = QtWidgets.QTreeWidgetItem([status_icon, name, u["ip"]])
-            self.users.addTopLevelItem(item)
-
-
-    def add_chat(self, msg: dict):
-        # Handle incoming messages from the server
-        try:
-            if msg.get("type") == "chat":
-                # Safe handling of expected chat messages
-                self.chat_view.append(
-                    f"<b>{msg.get('name', 'Unknown')}</b>: {msg.get('text', '')}"
-                )
-            else:
-                # Unexpected message type — log it for debugging
-                print(f"⚠️ Unexpected message type or format: {msg}")
-        except Exception as e:
-            # Catch unexpected structure or other runtime issues
-            print(f"❌ Error processing message: {e} | Raw: {msg}")
-
-
-    # ── chat send ────────────────────────────────────────────────────────
-    def send_chat(self):
-        text = self.chat_edit.text().strip()
-        if not text: return
-        payload = {"type": "chat", "text": text}
-        # NetThread exposes writer? (simplified: place on queue)
-        self.net.chatmsg.emit(payload)  # locally echo
-        # TODO: queue outbound message to net thread
-        self.chat_edit.clear()
-
-    # ── close/hide → tray ────────────────────────────────────────────────
-    def closeEvent(self, ev: QtGui.QCloseEvent):
-        self.hide()
-        ev.ignore()
-
-###############################################################################
-# ─── Entry-point ────────────────────────────────────────────────────────────
-###############################################################################
-
 def main():
     app = QtWidgets.QApplication(sys.argv)
-    
+
     ###############################################################################
     # ─── ERROR CHECKING / LOAD JSON / FIRST TIME RUN ─────────────────────────────
     ###############################################################################
@@ -311,12 +138,39 @@ def main():
             settings["display_name"] = dlg.display_name
             settings["server_ip"]    = dlg.server_ip
             settings["server_port"]  = dlg.server_port
+            settings.save()  # Save immediately after first run setup
         else:
             sys.exit(0)
 
-    win = MainWindow(settings)
-    win.show()
-    sys.exit(app.exec())
+    # Initialize network thread for communication with server
+    net_thread = NetworkThread(settings)
+    net_thread.start()
+
+    # Initialize audio engine for mic and speaker handling
+    audio_engine = AudioEngine(settings, net_thread, status_callback=None)  # Will set callback later
+
+    # Create main GUI window
+    window = MainWindow(settings, net_thread, audio_engine)
+
+    # Assign the status callback after window is created
+    audio_engine.status_callback = window.show_status
+
+    # PTT Key filter    
+    window.install_ptt_key_filter()
+
+    window.show()
+
+    # Run Qt event loop
+    exit_code = app.exec()
+
+    # On app exit, ensure proper cleanup
+    window.cleanup()
+    net_thread.stop()
+    net_thread.wait()
+
+    sys.exit(exit_code)
+
 
 if __name__ == "__main__":
     main()
+

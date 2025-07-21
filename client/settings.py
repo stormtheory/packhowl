@@ -5,17 +5,24 @@ Gracefully handles first-run wizard prompts.
 
 import json
 from typing import Any
-from common import SETTINGS_FILE, DATA_DIR, ensure_data_dirs
-from common import SERVER_PORT as DEFAULT_SERVER_PORT
+from config import SETTINGS_FILE, DATA_DIR, ensure_data_dirs
+from config import SERVER_PORT as DEFAULT_SERVER_PORT
 
 # ── Default template if file doesn't exist yet ───────────────────────────────
 DEFAULT_SETTINGS: dict[str, Any] = {
-    "display_name": "",
-    "server_ip":    "",
-    "audio_input":  "default",
-    "audio_output": "default",
-    "ptt_key":      "LeftAlt",
-    "server_port":  DEFAULT_SERVER_PORT
+    "display_name": "",           # Display name shown to other users
+    "server_ip":    "",           # Remote server IP address
+    "server_port":  DEFAULT_SERVER_PORT,  # Server port number
+
+    "audio_input":  "default",    # Selected audio input device
+    "audio_output": "default",    # Selected audio output device
+
+    "ptt_key":      "LeftAlt",    # Default push-to-talk hotkey
+    "ptt":          False,        # Push-to-talk toggle state
+    "vox":          False,        # Voice activation toggle state
+
+    "mic_vol":      100,          # Microphone volume (0–100)
+    "spk_vol":      100           # Speaker volume (0–100)
 }
 
 class Settings:
@@ -40,3 +47,6 @@ class Settings:
     def __setitem__(self, k, v): 
         self.data[k] = v
         self.save()
+    
+    def get(self, k, default=None):  # ✅ ADD THIS
+        return self.data.get(k, default)

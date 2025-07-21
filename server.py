@@ -6,17 +6,30 @@ Silent Link – secure voice/chat server
 • Drops clients with unknown certificates
 """
 
-import argparse, asyncio, json, ssl, time
+import argparse, asyncio, json, ssl, time, base64
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Dict
-from common import (SERVER_BIND, SSL_CERT_PATH, SSL_CA_PATH, MAX_USERS,
+from config import (SERVER_BIND, SSL_CERT_PATH, SSL_CA_PATH, MAX_USERS,
                     ensure_data_dirs)
-from common import SERVER_PORT as PORT
+from config import SERVER_PORT as PORT
+import logging
 
-print(f"CERT: {SSL_CERT_PATH}, CA: {SSL_CA_PATH}")
+# ── Argument parser for debug mode ──────────────────────────────────────────
+parser = argparse.ArgumentParser()
+parser.add_argument("-d", "--debug", action='store_true', help='Run GUI in debug mode')
+args = parser.parse_args()
 
+### SET LOGGING LEVEL
+logger = logging.getLogger()
+if args.debug:
+    logger.setLevel(logging.DEBUG)     # INFO, DEBUG
+else:
+    logger.setLevel(logging.INFO)     # INFO, DEBUG
 
+logging.debug(f"CERT: {SSL_CERT_PATH}, CA: {SSL_CA_PATH}")
+
+# ── Helper: get user list (used in UI broadcast) ────────────────────────────
 def get_user_list(self) -> list[dict]:
     """Build list of connected users with display name and IP."""
     return [{"name": c.cn, "ip": c.ip} for c in self.clients.values()]
@@ -34,6 +47,11 @@ class ClientInfo:
     ip: str
     connected_at: float = field(default_factory=time.time)
 
+    # ── NEW: voice / mute bookkeeping ────────────────────────────────────────
+    tx: bool = False             # True while client is actively sending audio
+    muted: bool = False          # True if client set mic mute
+    last_audio: float = 0.0      # Timestamp of last audio frame received
+
 ###############################################################################
 # ─── Server core ────────────────────────────────────────────────────────────
 ###############################################################################
@@ -44,7 +62,7 @@ class Server:
         self.clients: Dict[str, ClientInfo] = {}  # key = CN
 
         # --- Configure SSL context (server side, mutual TLS) --------------
-       # 🔐 Create hardened TLS server context
+        # 🔐 Create hardened TLS server context
         self.ssl_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
 
         # Load server certificate (combined .pem with cert + key)
@@ -85,11 +103,10 @@ class Server:
 
         # Optional: restrict to TLS 1.2 ciphers if TLS 1.3 is not available
         self.ssl_ctx.set_ciphers("ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384")
-        
 
     # ▒▒▒ connection handler ▒▒▒
     async def handle_client(self, reader: asyncio.StreamReader,
-                        writer: asyncio.StreamWriter) -> None:
+                            writer: asyncio.StreamWriter) -> None:
         cn = "UNKNOWN"
         try:
             peername = writer.get_extra_info("peername")[0]
@@ -123,11 +140,29 @@ class Server:
                         # Update client info
                         self.clients[cn].cn = msg.get("name", cn)
                         self.clients[cn].ip = msg.get("ip", peername)
+                        self.clients[cn].muted = msg.get("muted", False)  # ── NEW
                         await self.broadcast_user_list()
                         continue  # don't forward 'init' to others
 
-                    # Broadcast other messages to all except sender
-                    await self.broadcast(msg, exclude=cn)
+                    # Handle Opus audio frame forwarding
+                    elif msg.get("type") == "audio":
+                        if "data" in msg:                                   # ── NEW: changed key 'frame' → 'data'
+                            self.clients[cn].tx = True                       # mark talking
+                            self.clients[cn].last_audio = time.time()
+                            await self.broadcast_user_list()                # push TX status
+                            await self.broadcast(msg, exclude=cn)           # relay frame
+                        else:
+                            self.log(f"[WARN] invalid audio msg from {cn}")
+
+                    # ── NEW: mute/unmute message -------------------------------------------------
+                    elif msg.get("type") == "muted":
+                        self.clients[cn].muted = bool(msg.get("value", False))
+                        await self.broadcast_user_list()
+                    # ---------------------------------------------------------------------------
+
+                    # Handle chat or control messages
+                    else:
+                        await self.broadcast(msg, exclude=cn)
 
                 except Exception as exc:
                     self.log(f"[WARN] bad msg from {cn}: {exc}")
@@ -158,16 +193,16 @@ class Server:
             if self.debug:
                 self.print_user_table()
 
-
     # ▒▒▒ broadcast user list ▒▒▒
     async def broadcast_user_list(self):
         """Send the updated user list to all connected clients."""
         user_list = []
         for client in self.clients.values():
             user_list.append({
-                "name": client.cn,
-                "ip": client.ip,
-                # Optionally: add 'tx', 'muted' flags here later
+                "name":  client.cn,
+                "ip":    client.ip,
+                "tx":    client.tx,     # ── NEW: actively transmitting flag
+                "muted": client.muted   # ── NEW: mic muted flag
             })
 
         message = json.dumps({
@@ -182,7 +217,6 @@ class Server:
             except Exception as e:
                 self.log(f"[WARN] Failed to send user list to {client.cn}: {e}")
 
-
     # ▒▒▒ broadcast helper ▒▒▒
     async def broadcast(self, msg: dict, exclude: str | None = None) -> None:
         """Send JSON line to every client except `exclude`."""
@@ -196,6 +230,20 @@ class Server:
             except (ConnectionResetError, BrokenPipeError):
                 self.clients.pop(cn, None)
 
+    # ── NEW: periodic watcher to reset TX after silence ──────────────────────
+    async def _voice_watcher(self):
+        """Clears tx flag ~300 ms after last audio frame to keep indicator fresh."""
+        while True:
+            await asyncio.sleep(0.3)
+            now = time.time()
+            dirty = False
+            for c in self.clients.values():
+                if c.tx and now - c.last_audio > 0.3:
+                    c.tx = False
+                    dirty = True
+            if dirty:
+                await self.broadcast_user_list()
+
     # ▒▒▒ util: logging ▒▒▒
     def log(self, *a) -> None:
         """Simple timestamped print."""
@@ -203,7 +251,7 @@ class Server:
 
     def print_user_table(self) -> None:
         table = ", ".join(f"{c.cn}@{c.ip}" for c in self.clients.values())
-        print(f"Connected users ({len(self.clients)}/{MAX_USERS}): {table}")
+        logging.debug(f"Connected users ({len(self.clients)}/{MAX_USERS}): {table}")
 
     # ▒▒▒ entry-point ▒▒▒
     async def run(self) -> None:
@@ -213,9 +261,11 @@ class Server:
         )
         addr = ", ".join(str(sock.getsockname()) for sock in server.sockets)
         self.log(f"[SILENT LINK] serving on {addr}")
-        
-        #print(f"🔐 TLS version: {conn.version()}, cipher: {conn.cipher()}")
 
+        #logging.debug(f"🔐 TLS version: {conn.version()}, cipher: {conn.cipher()}")
+
+        # ── NEW: launch voice activity watcher task ─────────────────────────
+        asyncio.create_task(self._voice_watcher())
 
         async with server:
             await server.serve_forever()
