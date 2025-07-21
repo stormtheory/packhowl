@@ -134,14 +134,14 @@ if [ $DEBUG == true ];then
 		export PYTHONWARNINGS="ignore"
 	#### Run the AI
 		echo "Starting Client"
-		python server.py --debug
+		python3 server.py --debug
 		exit 0
 elif [ $APP == true ];then
 	#### Export Variables
 		export PYTHONWARNINGS="ignore"
 	#### Run the AI
 		echo "Starting Server"
-		python server.py
+		python3 server.py
 		exit 0
 fi
 echo "ERROR!"

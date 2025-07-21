@@ -151,14 +151,14 @@ if [ $DEBUG == true ];then
 		export PYTHONWARNINGS="ignore"
 	#### Run the AI
 		echo "Starting Client"
-		python client.py -d
+		python3 client.py -d
 		exit 0
 elif [ $APP == true ];then
 	#### Export Variables
 		export PYTHONWARNINGS="ignore"
 	#### Run the AI
 		echo "Starting Client"
-		python client.py
+		python3 client.py
 		exit 0
 fi
 echo "ERROR!"
