@@ -123,7 +123,7 @@ class NetworkThread(QtCore.QThread):
         # main RX loop
         while not reader.at_eof() and not self._stop:
             line = await reader.readline()
-            if not line:
+            if not line or self._stop:
                 break
             msg = json.loads(line.decode())
             msg_type = msg.get("type")
@@ -144,7 +144,12 @@ class NetworkThread(QtCore.QThread):
                     logging.debug(f"[Net RX] Unknown message type: {msg_type}")
 
 
-        send_task.cancel()  # cleanup on disconnect
+        send_task.cancel()
+        try:
+            await send_task
+        except asyncio.CancelledError:
+            pass
+
 
         self.status.emit("[WARN] server closed connection")
         try:
