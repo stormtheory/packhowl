@@ -84,7 +84,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.mic_slider.setRange(0, 100)
         self.mic_slider.setValue(100)
         self.input_device = QtWidgets.QComboBox()
-        self.ptt_checkbox = QtWidgets.QCheckBox("Push to Talk")
+        self.audio_mode_combo = QtWidgets.QComboBox()
+        self.audio_mode_combo.addItems(["Open Mic", "Push to Talk", "Voice Activated"])
+
 
         # Speaker controls (buttons + slider + combo + check)
         self.mute_spk_btn = QtWidgets.QPushButton("Mute Audio")
@@ -92,19 +94,18 @@ class MainWindow(QtWidgets.QMainWindow):
         self.spk_slider.setRange(0, 100)
         self.spk_slider.setValue(100)
         self.output_device = QtWidgets.QComboBox()
-        self.vox_checkbox = QtWidgets.QCheckBox("Voice Activated")
 
         # ── Layout top row: Mic controls ─────────────────────────────
         audio_layout.addWidget(self.mute_mic_btn, 0, 0)
         audio_layout.addWidget(self.mic_slider, 0, 1)
         audio_layout.addWidget(self.input_device, 0, 2)
-        audio_layout.addWidget(self.ptt_checkbox, 0, 3)
+        audio_layout.addWidget(self.audio_mode_combo, 0, 3)
+
 
         # ── Layout second row: Speaker controls ──────────────────────
         audio_layout.addWidget(self.mute_spk_btn, 1, 0)
         audio_layout.addWidget(self.spk_slider, 1, 1)
         audio_layout.addWidget(self.output_device, 1, 2)
-        audio_layout.addWidget(self.vox_checkbox, 1, 3)
         
         # ── Layout third row: Mic & Speaker level bars ───────────────
         self.mic_level_bar = QtWidgets.QProgressBar()
@@ -185,8 +186,11 @@ class MainWindow(QtWidgets.QMainWindow):
         # Restore saved audio-related settings or set defaults
         self.mic_slider.setValue(self.settings.get("mic_vol", 100))
         self.spk_slider.setValue(self.settings.get("spk_vol", 100))
-        self.ptt_checkbox.setChecked(self.settings.get("ptt", False))
-        self.vox_checkbox.setChecked(self.settings.get("vox", False))
+        saved_mode = self.settings.get("audio_mode", "Open Mic")
+        index = self.audio_mode_combo.findText(saved_mode)
+        if index != -1:
+            self.audio_mode_combo.setCurrentIndex(index)
+
 
         # Restore saved input device selection, fallback gracefully
         saved_input = self.settings.get("input_device", None)
@@ -205,8 +209,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # Connect signals to save changes immediately
         self.mic_slider.valueChanged.connect(self.save_mic_vol)
         self.spk_slider.valueChanged.connect(self.save_spk_vol)
-        self.ptt_checkbox.toggled.connect(self._ptt_toggled)
-        self.vox_checkbox.toggled.connect(self._vox_toggled)
+        self.audio_mode_combo.currentTextChanged.connect(self._audio_mode_changed)
         self.input_device.currentIndexChanged.connect(self.save_input_device)
         self.output_device.currentIndexChanged.connect(self.save_output_device)
 
@@ -290,6 +293,13 @@ class MainWindow(QtWidgets.QMainWindow):
             timeout (int): Duration in ms. 0 = permanent.
         """
         self.status_bar.showMessage(message, timeout)
+        
+    def _audio_mode_changed(self, mode: str):
+        self.settings["audio_mode"] = mode
+        self.settings.save()
+        if self.audio_engine:
+            self.audio_engine.set_audio_mode(mode)
+
 
     def add_status(self, line: str):
         self.status.addItem(line)

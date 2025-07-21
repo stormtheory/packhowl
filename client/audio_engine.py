@@ -413,7 +413,27 @@ class AudioEngine(QtCore.QObject):
         finally:
             loop.close()
 
-    
+    def set_audio_mode(self, mode: str):
+        """
+        Set the audio mode: "Open Mic", "Push to Talk", or "Voice Activated".
+        Update internal flags accordingly.
+        """
+        with self.lock:
+            if mode == "Open Mic":
+                self.ptt_enabled = False
+                self.vox_enabled = False
+            elif mode == "Push to Talk":
+                self.ptt_enabled = True
+                self.vox_enabled = False
+            elif mode == "Voice Activated":
+                self.ptt_enabled = False
+                self.vox_enabled = True
+            else:
+                # Unknown mode — default to Open Mic
+                self.ptt_enabled = False
+                self.vox_enabled = False
+        logging.info(f"[AudioEngine] Audio mode set to: {mode}")
+
 
     def _is_ptt_pressed(self):
         """
