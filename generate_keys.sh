@@ -78,6 +78,8 @@ openssl x509 -req -in server/server.csr -CA ca.crt -CAkey ca/ca.key -CAcreateser
 # Combine cert and key into one PEM
 cat server/server.crt server/server.key > server/server.pem
 
+# Create ca.pem
+cp ca.crt ca.pem
 
 #### Client #############################
 
@@ -99,7 +101,6 @@ done
 
 mkdir -p $DATA_DIR/certs
 rm $DATA_DIR/certs/*
-cp -v ca.crt $DATA_DIR/certs/ca.pem
-cp -v server/*.pem client/*.pem $DATA_DIR/certs/
+cp -v ca.pem server/*.pem client/*.pem $DATA_DIR/certs/
 
 ls -l $DATA_DIR/certs/*
