@@ -4,7 +4,7 @@ from pathlib import Path
 # https://github.com/stormtheory/silent-link
 
 # ─── Silent Link Configuration ────────────────────────────────────────────────
-APP_NAME        = "Silent Link"
+APP_NAME        = "Pack Howl"
 APP_ICON_PATH   = "assets/icon.png"         # 🔔 Used by client tray
 
 # ─── Networking ───────────────────────────────────────────────────────────────
@@ -13,7 +13,7 @@ SERVER_BIND     = "0.0.0.0"                 # Server binds to all interfaces
 CLIENT_IP       = "0.0.0.0"                 # Client binds to all interfaces (can be overridden)
 
 # ─── Files and Directories ────────────────────────────────────────────────────
-DATA_DIR        = Path.home() / ".silentlink/"
+DATA_DIR        = Path.home() / ".packhowl/"
 SETTINGS_FILE   = DATA_DIR / "settings.json"
 LOG_DIR         = DATA_DIR / "logs"
 
@@ -26,6 +26,6 @@ MAX_USERS       = 15
 
 # ── Small helpers ─────────────────────────────────────────────────────────
 def ensure_data_dirs() -> None:
-    """Create ~/.silentlink & ~/.silentlink/logs on first run."""
+    """Create ~/.packhowl & ~/.packhowl/logs on first run."""
     for d in (DATA_DIR, LOG_DIR):
         d.mkdir(parents=True, exist_ok=True)
