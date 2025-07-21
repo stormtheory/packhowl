@@ -67,6 +67,8 @@ class MainWindow(QtWidgets.QMainWindow):
         right_layout.addLayout(bottom)
 
         # ── Audio controls ─────────────────────────────────────────────────────
+        self.ptt_pressed = False
+        
         audio_controls = QtWidgets.QGroupBox("Audio Controls")
         audio_layout = QtWidgets.QGridLayout()
 
@@ -173,6 +175,43 @@ class MainWindow(QtWidgets.QMainWindow):
         self.output_device.currentIndexChanged.connect(self.save_output_device)
 
         self.update_server_label()
+
+    # ── PTT ──────────────────────────────────────────────────
+    def install_ptt_key_filter(self):
+        # Map key string from settings to Qt key
+        ptt_key_str = self.settings.get("ptt_key", "LeftAlt") # LeftAlt is the fallback
+        # Mapping dictionary, add more keys as needed
+        key_map = {
+            "LeftAlt": Qt.Key_Alt,
+            "RightAlt": Qt.Key_Alt,
+            "LeftShift": Qt.Key_Shift,
+            "RightShift": Qt.Key_Shift,
+            "LeftCtrl": Qt.Key_Control,
+            "RightCtrl": Qt.Key_Control,
+            "Space": Qt.Key_Space,
+            # Add other keys if needed
+        }
+        self.ptt_key = key_map.get(ptt_key_str, Qt.Key_Alt)  # Default to LeftAlt
+
+        self.ptt_pressed = False  # Track key state
+
+        # Install event filter on main window for key press/release
+        self.installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        if event.type() == QtCore.QEvent.KeyPress:
+            if event.key() == self.ptt_key:
+                self.ptt_pressed = True
+                # Tell audio engine that PTT key is pressed
+                if self.audio_engine:
+                    self.audio_engine.set_ptt_pressed(True)
+        elif event.type() == QtCore.QEvent.KeyRelease:
+            if event.key() == self.ptt_key:
+                self.ptt_pressed = False
+                if self.audio_engine:
+                        self.audio_engine.set_ptt_pressed(False)
+        return super().eventFilter(obj, event)
+
 
     # ── UI updates ───────────────────────────────────────────────────────
     def update_server_label(self):

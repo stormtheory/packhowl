@@ -241,8 +241,16 @@ class AudioEngine(QtCore.QObject):
                     return  # below threshold, skip frame
 
             # ── Push-to-Talk gate (stub: always allowed unless you implement key state) ──
-            if self.ptt_enabled and not self._is_ptt_pressed():
-                return
+            def _is_ptt_pressed(self):
+                """
+                Return whether Push-To-Talk key is pressed.
+                Now returns the flag updated from GUI key event filter.
+                """
+                return self.ptt_enabled and self.ptt_pressed
+            
+            def set_ptt_pressed(self, pressed: bool):
+                with self.lock:
+                    self.ptt_pressed = pressed
 
             # ── Resample if device ≠ 48 kHz ───────────────────────────────
             if self.resample_input:

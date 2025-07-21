@@ -155,6 +155,9 @@ def main():
     # Assign the status callback after window is created
     audio_engine.status_callback = window.show_status
 
+    # PTT Key filter    
+    window.install_ptt_key_filter()
+
     window.show()
 
     # Run Qt event loop
