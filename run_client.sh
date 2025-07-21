@@ -40,12 +40,16 @@ EOF
 # 🔧 Default values
 APP=true
 DEBUG=false
+LOOPBACK=false
 
 # 🔍 Parse options
 while getopts ":wldhc" opt; do
   case ${opt} in
     d)
         DEBUG=true
+        ;;
+    l)
+        LOOPBACK=true
         ;;
     h)
       show_help
@@ -153,8 +157,15 @@ fi
 
 #### Run the Box
         source $PYENV_DIR/bin/activate
-        
-if [ $DEBUG == true ];then
+
+if [ $LOOPBACK == true ];then
+	#### Export Variables
+		export PYTHONWARNINGS="ignore"
+	#### Run the AI
+		echo "Starting Client"
+		python3 client.py -l
+		exit 0        
+elif [ $DEBUG == true ];then
 	#### Export Variables
 		export PYTHONWARNINGS="ignore"
 	#### Run the AI
