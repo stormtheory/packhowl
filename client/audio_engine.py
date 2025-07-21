@@ -306,6 +306,9 @@ class AudioEngine(QtCore.QObject):
             print(f"[Audio][ERR] Input callback error: {e}")
 
     def _output_callback(self, outdata, frames, time_info, status):
+        if self.spk_muted:
+            outdata.fill(0)  # mute speaker output
+            return
         if status:
             logging.warning(f"[Audio] Input stream status: {status}")
 
