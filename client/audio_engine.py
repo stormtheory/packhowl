@@ -374,7 +374,15 @@ class AudioEngine(QtCore.QObject):
         """
         with self.lock:
             self.loopback_enabled = enabled
-
+            
+    def enqueue_audio_threadsafe(self, opus_hex):
+        QMetaObject.invokeMethod(
+            self,
+            "queue_incoming_audio",
+            Qt.QueuedConnection,
+            # Pass as tuple of QVariant-compatible types
+            (opus_hex,)
+        )
 
     # ─── Setters to update mute/mode flags from GUI controls ───────────────
     def set_mic_muted(self, muted):

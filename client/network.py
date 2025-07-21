@@ -55,9 +55,10 @@ class NetworkThread(QtCore.QThread):
     userlist = QtCore.Signal(list)
     chatmsg = QtCore.Signal(dict)
 
-    def __init__(self, settings):
+    def __init__(self, settings, audio_engine=None):
         super().__init__()
         self.settings = settings
+        self.audio_engine = audio_engine
         global SERVER_PORT
         SERVER_PORT = self.settings.get("server_port", 12345)
         self._stop = False
