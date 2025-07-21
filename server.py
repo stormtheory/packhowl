@@ -13,8 +13,23 @@ from typing import Dict
 from common import (SERVER_BIND, SSL_CERT_PATH, SSL_CA_PATH, MAX_USERS,
                     ensure_data_dirs)
 from common import SERVER_PORT as PORT
+import argparse
+import logging
 
-print(f"CERT: {SSL_CERT_PATH}, CA: {SSL_CA_PATH}")
+parser = argparse.ArgumentParser()
+parser.add_argument("-d", "--debug", action='store_true', help='Run GUI in debug mode')
+args = parser.parse_args()
+
+### SET LOGGING LEVEL
+logger = logging.getLogger()
+if args.debug:
+    logger.setLevel(logging.DEBUG)     # INFO, DEBUG
+else:
+    logger.setLevel(logging.INFO)     # INFO, DEBUG
+
+
+
+logging.debug(f"CERT: {SSL_CERT_PATH}, CA: {SSL_CA_PATH}")
 
 
 def get_user_list(self) -> list[dict]:
@@ -203,7 +218,7 @@ class Server:
 
     def print_user_table(self) -> None:
         table = ", ".join(f"{c.cn}@{c.ip}" for c in self.clients.values())
-        print(f"Connected users ({len(self.clients)}/{MAX_USERS}): {table}")
+        logging.debug(f"Connected users ({len(self.clients)}/{MAX_USERS}): {table}")
 
     # ▒▒▒ entry-point ▒▒▒
     async def run(self) -> None:
@@ -214,7 +229,7 @@ class Server:
         addr = ", ".join(str(sock.getsockname()) for sock in server.sockets)
         self.log(f"[SILENT LINK] serving on {addr}")
         
-        #print(f"🔐 TLS version: {conn.version()}, cipher: {conn.cipher()}")
+        #logging.debug(f"🔐 TLS version: {conn.version()}, cipher: {conn.cipher()}")
 
 
         async with server:

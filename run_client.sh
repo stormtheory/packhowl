@@ -140,6 +140,7 @@ fi
 
 #### Run the Box
         source $PYENV_DIR/bin/activate
+        
 if [ $DEBUG == true ];then
 	#### Export Variables
 		export PYTHONWARNINGS="ignore"
