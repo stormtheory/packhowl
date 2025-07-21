@@ -5,8 +5,8 @@ Gracefully handles first-run wizard prompts.
 
 import json
 from typing import Any
-from common import SETTINGS_FILE, DATA_DIR, ensure_data_dirs
-from common import SERVER_PORT as DEFAULT_SERVER_PORT
+from config import SETTINGS_FILE, DATA_DIR, ensure_data_dirs
+from config import SERVER_PORT as DEFAULT_SERVER_PORT
 
 # ── Default template if file doesn't exist yet ───────────────────────────────
 DEFAULT_SETTINGS: dict[str, Any] = {

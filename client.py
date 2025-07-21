@@ -12,9 +12,9 @@ from client.network import NetworkThread
 from client.audio_engine import AudioEngine
 from client.gui import MainWindow
 
-from common import (APP_NAME, APP_ICON_PATH, CLIENT_IP, SSL_CA_PATH, CERTS_DIR,
+from config import (APP_NAME, APP_ICON_PATH, CLIENT_IP, SSL_CA_PATH, CERTS_DIR,
                     DATA_DIR, ensure_data_dirs)
-from common import SERVER_PORT as DEFAULT_SERVER_PORT
+from config import SERVER_PORT as DEFAULT_SERVER_PORT
 import socket
 import argparse
 import logging

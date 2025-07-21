@@ -11,9 +11,9 @@ from PySide6 import QtCore
 
 from client.settings import Settings
 
-from common import (APP_NAME, APP_ICON_PATH, CLIENT_IP, SSL_CA_PATH, CERTS_DIR,
+from config import (APP_NAME, APP_ICON_PATH, CLIENT_IP, SSL_CA_PATH, CERTS_DIR,
                     DATA_DIR, ensure_data_dirs)
-from common import SERVER_PORT as DEFAULT_SERVER_PORT
+from config import SERVER_PORT as DEFAULT_SERVER_PORT
 
 
 

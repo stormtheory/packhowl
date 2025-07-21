@@ -8,22 +8,26 @@ Encrypted, private voice + chat client and server written in Python 3.12 using P
 ✅ Low Server CPU and memory use.
 ✅ Binary-safe Opus forwarding supported using opuslib encoder/decoder
 
+
+<img width="960" height="528" alt="Image" src="https://github.com/user-attachments/assets/13e3895f-c1c2-4cab-9111-c14b3f87bed6" />
+
+
 # In the Works:
 Guiding Principle(s):
 - As always: Fighting to keep this AI free, private, opensource, fast, and easy (in that order).
 
 Short-term:
-- 
+- Getting a stable and tested product.
 
 Long-term:
-- 
+- None at this time.
 
 Upon Request:
 - Add YUM support.
 - Add AMD support.
 
 # Ultimate Goals
-- A free, private, fast, and easy.
+- A free, private, fast, and easy audio/chat server that is self hosted and secure.
 
 # System Requirements:
 - TLS 1.3 support.
