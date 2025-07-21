@@ -1,6 +1,6 @@
 # Silent Link
 
-Encrypted, private voice + chat client and server written in Python 3.12 using PySide6, sounddevice, and TLS mutual auth.
+Encrypted, private voice + chat client and server written in Python 3.12 using PySide6, sounddevice, and TLS 1.3 mutual auth.
 
 # In the Works:
 Guiding Principle(s):

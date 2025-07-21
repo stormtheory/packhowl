@@ -12,6 +12,7 @@ from functools import partial
 from typing import Optional
 
 from PySide6 import QtWidgets, QtGui, QtCore
+from PySide6.QtCore import QTimer
 from common import (APP_NAME, APP_ICON_PATH, CLIENT_IP, SSL_CA_PATH, CERTS_DIR,
                     DATA_DIR, ensure_data_dirs)
 from common import SERVER_PORT as DEFAULT_SERVER_PORT
@@ -19,7 +20,8 @@ from settings import Settings
 import socket
 import argparse
 import logging
-import json
+import re
+import ipaddress
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-d", "--debug", action='store_true', help='Run GUI in debug mode')
@@ -32,15 +34,19 @@ if args.debug:
 else:
     logger.setLevel(logging.INFO)     # INFO, DEBUG
 
-
-CLIENT_CERT_PATH = CERTS_DIR / f"{socket.gethostname()}.pem"
+import os
+# especially needed on Wayland (e.g. GNOME, KDE) where Qt apps may silently fail to show windows under certain themes or missing dependencies
+os.environ["QT_QPA_PLATFORM"] = "xcb"
 
 ###############################################################################
 # ─── ERROR CHECK ────────────────────────────────────────────────────────────
 ###############################################################################
 
+CLIENT_CERT_PATH = CERTS_DIR / f"{socket.gethostname()}.pem"
+
 if not CLIENT_CERT_PATH.exists():
     raise FileNotFoundError(f"Client cert not found: {CLIENT_CERT_PATH}")
+
 
 ###############################################################################
 # ─── UI helpers ─────────────────────────────────────────────────────────────
@@ -55,15 +61,47 @@ class FirstRunDialog(QtWidgets.QDialog):
 
         self.name_edit = QtWidgets.QLineEdit()
         self.ip_edit = QtWidgets.QLineEdit()
-        self.port_edit = QtWidgets.QLineEdit(str(DEFAULT_SERVER_PORT))  # default port pre-filled
+        self.port_edit = QtWidgets.QLineEdit(str(DEFAULT_SERVER_PORT))
 
         form.addRow("Display Name:", self.name_edit)
         form.addRow("Server IP:", self.ip_edit)
         form.addRow("Server Port:", self.port_edit)
 
-        btn = QtWidgets.QPushButton("Save")
-        btn.clicked.connect(self.accept)
-        form.addRow(btn)
+        self.save_btn = QtWidgets.QPushButton("Save")
+        self.save_btn.clicked.connect(self.accept)
+        self.save_btn.setEnabled(False)
+        form.addRow(self.save_btn)
+
+        # Real-time validation
+        self.name_edit.textChanged.connect(self.validate)
+        self.ip_edit.textChanged.connect(self.validate)
+        self.port_edit.textChanged.connect(self.validate)
+
+    def validate(self):
+        name = self.name_edit.text().strip()
+        ip = self.ip_edit.text().strip()
+        port = self.port_edit.text().strip()
+
+        # Name: 1–32 chars, letters, numbers, spaces only
+        valid_name = 1 <= len(name) <= 32 and all(c.isalnum() or c.isspace() for c in name)
+
+        # IP: use ipaddress for strict validation fallback
+        try:
+            ipaddress.ip_address(ip)
+            valid_ip = True
+        except ValueError:
+            valid_ip = False
+
+        # Port: integer 1–65535
+        try:
+            p = int(port)
+            valid_port = 1 <= p <= 65535
+        except ValueError:
+            valid_port = False
+
+        is_valid = valid_name and valid_ip and valid_port
+
+        self.save_btn.setEnabled(is_valid)
 
     @property
     def display_name(self):
@@ -84,15 +122,16 @@ class FirstRunDialog(QtWidgets.QDialog):
             pass
         return None
 
+
 ###############################################################################
 # ─── Networking Thread ─────────────────────────────────────────────────────
 ###############################################################################
 
 class NetThread(QtCore.QThread):
     """Runs asyncio TLS client loop without blocking the Qt event loop."""
-    status = QtCore.Signal(str)          # emits status/info lines
-    userlist = QtCore.Signal(list)       # emits current userlist (list[dict])
-    chatmsg  = QtCore.Signal(dict)       # emits chat messages
+    status = QtCore.Signal(str)
+    userlist = QtCore.Signal(list)
+    chatmsg  = QtCore.Signal(dict)
 
     def __init__(self, settings: Settings):
         super().__init__()
@@ -100,11 +139,14 @@ class NetThread(QtCore.QThread):
         self._stop = False
         global SERVER_PORT
         SERVER_PORT = self.settings["server_port"]
+        self._loop = None  # Store event loop for coroutine submission
+        self.outbound_queue = asyncio.Queue()  # Outbound message queue for thread-safe sending
 
     def run(self):
         asyncio.run(self._main())
 
     async def _main(self):
+        self._loop = asyncio.get_running_loop()
         while not self._stop:
             try:
                 await self._connect_and_loop()
@@ -113,7 +155,8 @@ class NetThread(QtCore.QThread):
                 traceback.print_exc()
             # Auto-reconnect with back-off
             for i in range(5, 0, -1):
-                if self._stop: return
+                if self._stop:
+                    return
                 self.status.emit(f"[INFO] reconnect in {i}s")
                 await asyncio.sleep(1)
 
@@ -122,7 +165,8 @@ class NetThread(QtCore.QThread):
         self.status.emit(f"[INFO] connecting to {ip}:{SERVER_PORT}")
 
         # Build TLS context (client side, mutual auth)
-        ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        ctx.options |= ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1 | ssl.OP_NO_TLSv1_2  # TLS 1.3 only
         ctx.load_verify_locations(cafile=str(SSL_CA_PATH))
         ctx.load_cert_chain(certfile=str(CLIENT_CERT_PATH))  # your `client.pem`
         ctx.check_hostname = False
@@ -144,8 +188,10 @@ class NetThread(QtCore.QThread):
         writer.write((json.dumps(hello) + "\n").encode())
         await writer.drain()
 
-        # Main Rx loop
-        while not reader.at_eof():
+        send_task = asyncio.create_task(self._send_outgoing(writer))  # background sender loop
+
+        # main RX loop
+        while not reader.at_eof() and not self._stop:
             line = await reader.readline()
             if not line:
                 break
@@ -155,12 +201,13 @@ class NetThread(QtCore.QThread):
                 case "chat":     self.chatmsg.emit(msg)
                 # TODO: audio payloads, control frames, etc.
 
+        send_task.cancel()  # cleanup on disconnect
+
         self.status.emit("[WARN] server closed connection")
         try:
-            writer.write_eof()  # if supported
+            writer.write_eof()
         except Exception:
-            pass  # Not supported on all transports
-
+            pass
         try:
             await writer.drain()
             writer.close()
@@ -168,18 +215,43 @@ class NetThread(QtCore.QThread):
         except Exception as e:
             print(f"[WARN] Close error: {e}")
 
+    async def _send_outgoing(self, writer):
+        """Drains outbound_queue and writes to TLS socket."""
+        try:
+            while not self._stop:
+                msg = await self.outbound_queue.get()
+                writer.write((json.dumps(msg) + "\n").encode())
+                await writer.drain()
+                self.outbound_queue.task_done()
+        except asyncio.CancelledError:
+            pass
+
+    def queue_message(self, msg: dict):
+        """Queue message from GUI to network thread asynchronously."""
+        if self._loop and not self._stop:
+            asyncio.run_coroutine_threadsafe(
+                self.outbound_queue.put(msg), self._loop
+            )
+
+    def stop(self):
+        """Graceful shutdown signal for the network thread."""
+        self._stop = True
+
 
 ###############################################################################
 # ─── Main Window ───────────────────────────────────────────────────────────
 ###############################################################################
 
 class MainWindow(QtWidgets.QWidget):
+    RATE_LIMIT_MS = 1000  # 1 message per second rate limit
     def __init__(self, settings: Settings):
         super().__init__()
         self.settings = settings
         self.setWindowTitle(APP_NAME)
         self.setWindowIcon(QtGui.QIcon(APP_ICON_PATH))
         self.resize(640, 400)
+
+        self._last_sent_msecs = 0  # Rate limiter state
 
         # ── Left pane (server + user list + status) ───────────────────────
         left_layout = QtWidgets.QVBoxLayout()
@@ -258,7 +330,6 @@ class MainWindow(QtWidgets.QWidget):
             item = QtWidgets.QTreeWidgetItem([status_icon, name, u["ip"]])
             self.users.addTopLevelItem(item)
 
-
     def add_chat(self, msg: dict):
         # Handle incoming messages from the server
         try:
@@ -274,15 +345,27 @@ class MainWindow(QtWidgets.QWidget):
             # Catch unexpected structure or other runtime issues
             print(f"❌ Error processing message: {e} | Raw: {msg}")
 
-
     # ── chat send ────────────────────────────────────────────────────────
     def send_chat(self):
         text = self.chat_edit.text().strip()
-        if not text: return
-        payload = {"type": "chat", "text": text}
-        # NetThread exposes writer? (simplified: place on queue)
-        self.net.chatmsg.emit(payload)  # locally echo
-        # TODO: queue outbound message to net thread
+        if not text:
+            return
+
+        now = QtCore.QTime.currentTime().msecsSinceStartOfDay()
+        if now - self._last_sent_msecs < self.RATE_LIMIT_MS:
+            self.add_status("[WARN] Please wait before sending another message.")
+            return
+        self._last_sent_msecs = now
+
+        payload = {"type": "chat", "text": text[:512]}  # Limit length
+
+        # Echo locally
+        self.add_chat({"type": "chat", "name": self.settings["display_name"], "text": text})
+
+        # Queue message to network thread
+        if self.net:
+            self.net.queue_message(payload)
+
         self.chat_edit.clear()
 
     # ── close/hide → tray ────────────────────────────────────────────────
@@ -290,13 +373,14 @@ class MainWindow(QtWidgets.QWidget):
         self.hide()
         ev.ignore()
 
+
 ###############################################################################
 # ─── Entry-point ────────────────────────────────────────────────────────────
 ###############################################################################
 
 def main():
     app = QtWidgets.QApplication(sys.argv)
-    
+
     ###############################################################################
     # ─── ERROR CHECKING / LOAD JSON / FIRST TIME RUN ─────────────────────────────
     ###############################################################################
