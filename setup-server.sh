@@ -1,10 +1,11 @@
 #!/bin/bash
-cd "$(dirname "$0")"
 
 ID=$(id -u)
 if [ "$ID" != 0 ];then
         sudo $0
         exit
+else
+	cd "$(dirname "$0")"
 fi
 
 user=packhowl
@@ -81,9 +82,8 @@ if [ "$ANS" == y ];then
 		echo "❌ Error: Hostnames missing..."
 		exit
 	fi 
-	sed -i "s/^CLIENTS=''/CLIENTS=\'$HOSTNAMES\'/" generate_keys.sh
 	chmod +x generate_keys.sh
-	sudo -u $user ./generate_keys.sh
+	sudo -u $user ./generate_keys.sh -c "$HOSTNAMES"
 fi
 
 
