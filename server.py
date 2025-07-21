@@ -10,8 +10,9 @@ import argparse, asyncio, json, ssl, time
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Dict
-from common import (PORT, SERVER_BIND, SSL_CERT_PATH, SSL_CA_PATH, MAX_USERS,
+from common import (SERVER_BIND, SSL_CERT_PATH, SSL_CA_PATH, MAX_USERS,
                     ensure_data_dirs)
+from common import SERVER_PORT as PORT
 
 print(f"CERT: {SSL_CERT_PATH}, CA: {SSL_CA_PATH}")
 

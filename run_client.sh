@@ -140,8 +140,14 @@ fi
 
 #### Run the Box
         source $PYENV_DIR/bin/activate
-
-if [ $APP == true ];then
+if [ $DEBUG == true ];then
+	#### Export Variables
+		export PYTHONWARNINGS="ignore"
+	#### Run the AI
+		echo "Starting Client"
+		python client.py -d
+		exit 0
+elif [ $APP == true ];then
 	#### Export Variables
 		export PYTHONWARNINGS="ignore"
 	#### Run the AI

@@ -12,10 +12,26 @@ from functools import partial
 from typing import Optional
 
 from PySide6 import QtWidgets, QtGui, QtCore
-from common import (APP_NAME, APP_ICON_PATH, PORT, CLIENT_IP, SSL_CA_PATH, CERTS_DIR,
+from common import (APP_NAME, APP_ICON_PATH, CLIENT_IP, SSL_CA_PATH, CERTS_DIR,
                     DATA_DIR, ensure_data_dirs)
+from common import SERVER_PORT as DEFAULT_SERVER_PORT
 from settings import Settings
 import socket
+import argparse
+import logging
+import json
+
+parser = argparse.ArgumentParser()
+parser.add_argument("-d", "--debug", action='store_true', help='Run GUI in debug mode')
+args = parser.parse_args()
+
+### SET LOGGING LEVEL
+logger = logging.getLogger()
+if args.debug:
+    logger.setLevel(logging.DEBUG)     # INFO, DEBUG
+else:
+    logger.setLevel(logging.INFO)     # INFO, DEBUG
+
 
 CLIENT_CERT_PATH = CERTS_DIR / f"{socket.gethostname()}.pem"
 
@@ -31,23 +47,42 @@ if not CLIENT_CERT_PATH.exists():
 ###############################################################################
 
 class FirstRunDialog(QtWidgets.QDialog):
-    """Ask for Display Name & Server IP on first launch."""
+    """Ask for Display Name, Server IP, and Port on first launch."""
     def __init__(self):
         super().__init__()
         self.setWindowTitle(f"{APP_NAME} – Setup")
         form = QtWidgets.QFormLayout(self)
-        self.name_edit  = QtWidgets.QLineEdit()
-        self.ip_edit    = QtWidgets.QLineEdit()
+
+        self.name_edit = QtWidgets.QLineEdit()
+        self.ip_edit = QtWidgets.QLineEdit()
+        self.port_edit = QtWidgets.QLineEdit(str(DEFAULT_SERVER_PORT))  # default port pre-filled
+
         form.addRow("Display Name:", self.name_edit)
         form.addRow("Server IP:", self.ip_edit)
+        form.addRow("Server Port:", self.port_edit)
+
         btn = QtWidgets.QPushButton("Save")
         btn.clicked.connect(self.accept)
         form.addRow(btn)
 
     @property
-    def display_name(self): return self.name_edit.text().strip()
+    def display_name(self):
+        return self.name_edit.text().strip()
+
     @property
-    def server_ip(self):   return self.ip_edit.text().strip()
+    def server_ip(self):
+        return self.ip_edit.text().strip()
+
+    @property
+    def server_port(self) -> Optional[int]:
+        # Validate port: integer between 1 and 65535
+        try:
+            p = int(self.port_edit.text().strip())
+            if 1 <= p <= 65535:
+                return p
+        except ValueError:
+            pass
+        return None
 
 ###############################################################################
 # ─── Networking Thread ─────────────────────────────────────────────────────
@@ -63,6 +98,8 @@ class NetThread(QtCore.QThread):
         super().__init__()
         self.settings = settings
         self._stop = False
+        global SERVER_PORT
+        SERVER_PORT = self.settings["server_port"]
 
     def run(self):
         asyncio.run(self._main())
@@ -82,7 +119,7 @@ class NetThread(QtCore.QThread):
 
     async def _connect_and_loop(self):
         ip = self.settings["server_ip"]
-        self.status.emit(f"[INFO] connecting to {ip}:{PORT}")
+        self.status.emit(f"[INFO] connecting to {ip}:{SERVER_PORT}")
 
         # Build TLS context (client side, mutual auth)
         ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
@@ -93,7 +130,7 @@ class NetThread(QtCore.QThread):
 
         # NOTE: load client cert/key here if you require client auth
         reader, writer = await asyncio.open_connection(
-            host=ip, port=PORT, ssl=ctx, local_addr=(CLIENT_IP, 0)
+            host=ip, port=SERVER_PORT, ssl=ctx, local_addr=(CLIENT_IP, 0)
         )
         self.status.emit("[OK] connected")
 
@@ -202,7 +239,7 @@ class MainWindow(QtWidgets.QWidget):
     # ── UI updates ───────────────────────────────────────────────────────
     def update_server_label(self):
         ip = self.settings["server_ip"]
-        self.server_lbl.setText(f"🔗 Server: {ip}:{PORT}")
+        self.server_lbl.setText(f"🔗 Server: {ip}:{SERVER_PORT}")
 
     def add_status(self, line: str):
         self.status.addItem(line)
@@ -259,8 +296,13 @@ class MainWindow(QtWidgets.QWidget):
 
 def main():
     app = QtWidgets.QApplication(sys.argv)
+    
+    ###############################################################################
+    # ─── ERROR CHECKING / LOAD JSON / FIRST TIME RUN ─────────────────────────────
+    ###############################################################################
     ensure_data_dirs()
     settings = Settings()
+    logging.debug(json.dumps(settings.data, indent=2))
 
     # First-run wizard
     if not settings["display_name"] or not settings["server_ip"]:
@@ -268,6 +310,7 @@ def main():
         if dlg.exec() == QtWidgets.QDialog.Accepted:
             settings["display_name"] = dlg.display_name
             settings["server_ip"]    = dlg.server_ip
+            settings["server_port"]  = dlg.server_port
         else:
             sys.exit(0)
 

@@ -6,6 +6,7 @@ Gracefully handles first-run wizard prompts.
 import json
 from typing import Any
 from common import SETTINGS_FILE, DATA_DIR, ensure_data_dirs
+from common import SERVER_PORT as DEFAULT_SERVER_PORT
 
 # ── Default template if file doesn't exist yet ───────────────────────────────
 DEFAULT_SETTINGS: dict[str, Any] = {
@@ -13,7 +14,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "server_ip":    "",
     "audio_input":  "default",
     "audio_output": "default",
-    "ptt_key":      "LeftAlt"
+    "ptt_key":      "LeftAlt",
+    "server_port":  DEFAULT_SERVER_PORT
 }
 
 class Settings:
@@ -29,7 +31,7 @@ class Settings:
             except json.JSONDecodeError:
                 print("[WARN] corrupt settings.json, using defaults")
         return {}
-
+    
     def save(self) -> None:
         SETTINGS_FILE.write_text(json.dumps(self.data, indent=2))
 
