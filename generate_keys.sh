@@ -2,13 +2,13 @@
 cd "$(dirname "$0")"
 
 # Written by StormTheory
-# https://github.com/stormtheory/silent-link
+# https://github.com/stormtheory/packhowl
 
 ### Use hostnames
 SERVER='server'
 CLIENTS=''
 
-DATA_DIR="${HOME}/.silentlink"
+DATA_DIR="${HOME}/.packhowl"
 
 WORKING=./certs
 mkdir -p $WORKING
