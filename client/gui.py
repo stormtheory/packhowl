@@ -217,9 +217,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     # ── PTT ──────────────────────────────────────────────────
     def install_ptt_key_filter(self):
-        # Map key string from settings to Qt key
-        ptt_key_str = self.settings.get("ptt_key", "LeftAlt") # LeftAlt is the fallback
-        # Mapping dictionary, add more keys as needed
+        ptt_key_str = self.settings.get("ptt_key", "LeftAlt")
         key_map = {
             "LeftAlt": Qt.Key_Alt,
             "RightAlt": Qt.Key_Alt,
@@ -228,28 +226,28 @@ class MainWindow(QtWidgets.QMainWindow):
             "LeftCtrl": Qt.Key_Control,
             "RightCtrl": Qt.Key_Control,
             "Space": Qt.Key_Space,
-            # Add other keys if needed
         }
-        self.ptt_key = key_map.get(ptt_key_str, Qt.Key_Alt)  # Default to LeftAlt
-
-        self.ptt_pressed = False  # Track key state
-
-        # Install event filter on main window for key press/release
+        self.ptt_key = key_map.get(ptt_key_str, Qt.Key_Alt)
+        self.ptt_pressed = False
         self.installEventFilter(self)
 
     def eventFilter(self, obj, event):
         if event.type() == QtCore.QEvent.KeyPress:
-            if event.key() == self.ptt_key:
+            if event.key() == self.ptt_key and not self.ptt_pressed:
                 self.ptt_pressed = True
-                # Tell audio engine that PTT key is pressed
                 if self.audio_engine:
                     self.audio_engine.set_ptt_pressed(True)
+                logging.debug(f"[GUI] PTT key pressed: {event.key()}")
+                return True  # Stop further handling
         elif event.type() == QtCore.QEvent.KeyRelease:
-            if event.key() == self.ptt_key:
+            if event.key() == self.ptt_key and self.ptt_pressed:
                 self.ptt_pressed = False
                 if self.audio_engine:
-                        self.audio_engine.set_ptt_pressed(False)
+                    self.audio_engine.set_ptt_pressed(False)
+                logging.debug(f"[GUI] PTT key released: {event.key()}")
+                return True  # Stop further handling
         return super().eventFilter(obj, event)
+
 
 
     # ── UI updates ───────────────────────────────────────────────────────

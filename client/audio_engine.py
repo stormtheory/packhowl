@@ -253,7 +253,7 @@ class AudioEngine(QtCore.QObject):
     # ── Mic capture callback: encode + send ────────────────────────────────
     def _input_callback(self, indata, frames, time_info, status):
         if self.mic_muted:
-            logging.debug("[Audio][_input_callback] Mic muted, skipping frame")
+            #logging.debug("[Audio][_input_callback] Mic muted, skipping frame")
             return
 
         if status:
@@ -265,7 +265,13 @@ class AudioEngine(QtCore.QObject):
             rms = np.sqrt(np.mean(pcm.astype(np.float32) ** 2))
             self.inputLevel.emit(rms / 32768.0)
 
-            if self.vox_enabled:
+
+            if self.ptt_enabled:
+                # If PTT enabled but not pressed, skip sending audio
+                if not self.ptt_pressed:
+                    logging.debug("[Audio][_input_callback] PTT enabled but not pressed, skipping frame")
+                    return
+            elif self.vox_enabled:
                 new_vox = bool(rms >= self.vox_threshold)
                 if new_vox != self.vox_active:
                     self.vox_active = new_vox
@@ -273,12 +279,6 @@ class AudioEngine(QtCore.QObject):
                 if not new_vox:
                     logging.debug("[Audio][_input_callback] VOX enabled but no voice detected, skipping frame")
                     return  # Skip sending audio because VOX inactive
-
-            elif self.ptt_enabled:
-                # If PTT enabled but not pressed, skip sending audio
-                if not self.ptt_pressed:
-                    logging.debug("[Audio][_input_callback] PTT enabled but not pressed, skipping frame")
-                    return
             else:
                 # Open Mic mode — always send audio, reset VOX state if needed
                 if self.vox_active:
@@ -287,9 +287,10 @@ class AudioEngine(QtCore.QObject):
 
 
             # Check PTT
-            if self.ptt_enabled and not self.ptt_pressed:
-                logging.debug("[Audio][_input_callback] PTT enabled but not pressed, skipping frame")
-                return
+            if self.ptt_enabled:
+                if not self.ptt_pressed:
+                    logging.debug("[Audio][_input_callback] PTT enabled but not pressed, skipping frame")
+                    return
 
             if self.resample_input:
                 resampled = samplerate.resample(pcm, 48000 / self.dev_in_rate, 'sinc_fastest')
@@ -443,22 +444,12 @@ class AudioEngine(QtCore.QObject):
         logging.info(f"[AudioEngine] Audio mode set to: {mode}")
 
 
-    def _is_ptt_pressed(self):
-        """
-        Return whether Push-To-Talk key is pressed.
-        This function needs platform-specific implementation or integration with GUI input events.
-        For now, we assume PTT is always pressed if enabled (for demo purposes).
-        """
-        # TODO: integrate with actual PTT key state detection (e.g., via pynput or Qt events)
-        return True if self.ptt_enabled else False
-    
     def set_ptt_pressed(self, pressed: bool):
-        """
-        Called by GUI to update Push-To-Talk key state in real time.
-        This is required for dynamic PTT gating in the input callback.
-        """
         with self.lock:
-            self.ptt_pressed = pressed
+            if self.ptt_pressed != pressed:
+                self.ptt_pressed = pressed
+                logging.debug(f"[AudioEngine] PTT pressed set to: {pressed}")
+
 
     def set_loopback_enabled(self, enabled: bool):
         """
@@ -479,10 +470,6 @@ class AudioEngine(QtCore.QObject):
         """
         return self.ptt_enabled and self.ptt_pressed
             
-    def set_ptt_pressed(self, pressed: bool):
-        with self.lock:
-            self.ptt_pressed = pressed
-
     # ─── Setters to update mute/mode flags from GUI controls ───────────────
     def set_mic_muted(self, muted):
         with self.lock:
