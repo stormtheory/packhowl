@@ -134,6 +134,7 @@ class AudioEngine(QtCore.QObject):
 
     # ── Start the audio subsystem: open streams & launch worker thread ──────
     def start(self):
+        logging.debug("[Audio] Entering start()")
         """
         Opens input/output streams at the closest-supported device rate.
         Resamples to 48 kHz for Opus if the device can’t do 48 kHz natively.
@@ -143,6 +144,10 @@ class AudioEngine(QtCore.QObject):
         out_name = self.settings.get("output_device", None)
         in_idx   = self._find_device_index(in_name,  is_input=True)
         out_idx  = self._find_device_index(out_name, is_input=False)
+        
+        logging.debug(f"[Audio] Input stream device index: {in_idx}")
+        logging.debug(f"[Audio] Output stream device index: {out_idx}")
+
 
         # ── Validate actual working samplerates ─────────────────────────────
         try:
@@ -196,7 +201,9 @@ class AudioEngine(QtCore.QObject):
         )
 
         # ── Kick everything off ─────────────────────────────────────────────
+        logging.debug("[Audio] Starting stream_in")
         self.stream_in.start()
+        logging.debug("[Audio] Starting stream_out")
         self.stream_out.start()
         self.running = True
         print("[Audio] Streams started successfully")
@@ -225,6 +232,7 @@ class AudioEngine(QtCore.QObject):
         Called by sounddevice every `dev_in_frames` samples. Handles VOX/PTT,
         optional resampling to 48 kHz, then Opus-encodes and enqueues JSON.
         """
+        logging.debug("[Audio] _input_callback triggered")
         if self.mic_muted:
             return  # Hard-mute
 
@@ -237,12 +245,13 @@ class AudioEngine(QtCore.QObject):
 
             # ── Basic VOX (voice detection) ──────────────────────────────
             if self.vox_enabled:
-                new_vox = rms >= self.vox_threshold
+                new_vox = bool(rms >= self.vox_threshold)  # Cast to native bool
                 if new_vox != self.vox_active:
                     self.vox_active = new_vox
                     self.voxActivity.emit(self.vox_active)
                 if not new_vox:
                     return  # below threshold, skip frame
+
 
             # ── Push-to-Talk gate (stub: always allowed unless you implement key state) ──
             def _is_ptt_pressed(self):
@@ -269,11 +278,14 @@ class AudioEngine(QtCore.QObject):
 
 
             # ── Opus encode & ship ────────────────────────────────────────
-            opus_bytes = self.encoder.encode(pcm_int16.tobytes(), self.opus_frames)
+            opus_bytes = self.encoder.encode(pcm_int16.tobytes(), int(self.opus_frames))
             self.net_thread.queue_message({
                 "type": "audio",
                 "data": opus_bytes.hex()  # hex for JSON safety
             })
+            logging.debug(f"[Audio] Queued audio packet: {len(opus_bytes)} bytes")
+
+
             
             # Loopback monitoring: enqueue audio locally for playback
             if self.loopback_enabled:
@@ -286,6 +298,9 @@ class AudioEngine(QtCore.QObject):
             print(f"[Audio][ERR] Input callback error: {e}")
 
     def _output_callback(self, outdata, frames, time_info, status):
+        if status:
+            logging.warning(f"[Audio] Input stream status: {status}")
+
         """
         Called in sounddevice output thread context when audio playback buffer is needed.
         Dequeues Opus packets, decodes to PCM, and writes to output buffer.

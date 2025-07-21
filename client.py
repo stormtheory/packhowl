@@ -157,8 +157,15 @@ def main():
 
     # Initialize audio engine for mic and speaker handling
     audio_engine = AudioEngine(settings, net_thread, status_callback=None)  # Will set callback later
-    print("Starting AudioEngine")
-    audio_engine.start()
+    try:
+        logging.debug("Starting AudioEngine")
+        audio_engine.start()
+        logging.debug("AudioEngine started")
+    except Exception as e:
+        logging.debug(f"[Startup ERROR] AudioEngine failed to start: {e}")
+        import traceback
+        traceback.print_exc()
+
 
 
     if args.loopback:
