@@ -124,6 +124,12 @@ if [ "$PIP_INSTALL" == True ];then
                 echo "⚠️ Install portaudio19-dev for audio"
                 sudo apt install portaudio19-dev
         fi
+        if echo "$APT_LIST"|grep cmake;then
+                echo "✅ Installed... cmake"
+        else
+                echo "⚠️ Install cmake for compiling for audio/voice libs"
+                sudo apt install cmake
+        fi
 
         ### GUI
         pip install PySide6
@@ -141,7 +147,9 @@ if [ "$PIP_INSTALL" == True ];then
 touch $PYENV_DIR/$RUN
 fi
 
-
+if [ ! -d $HOME/.packhowl/certs ];then
+        mkdir -p ${HOME}/.packhowl/certs
+fi
 
 #### Run the Box
         source $PYENV_DIR/bin/activate

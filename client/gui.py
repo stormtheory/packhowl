@@ -25,6 +25,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.settings = settings
         self.net = net_thread
         self.audio_engine = audio_engine
+        
+        if self.audio_engine:
+            self.audio_engine.inputLevel.connect(self.update_mic_level)
+            self.audio_engine.outputLevel.connect(self.update_spk_level)
+
+
 
         # Create a central widget container for QMainWindow
         central_widget = QtWidgets.QWidget()
@@ -72,6 +78,7 @@ class MainWindow(QtWidgets.QMainWindow):
         audio_controls = QtWidgets.QGroupBox("Audio Controls")
         audio_layout = QtWidgets.QGridLayout()
 
+        # Mic controls (buttons + slider + combo + check)
         self.mute_mic_btn = QtWidgets.QPushButton("Mute Mic")
         self.mic_slider = QtWidgets.QSlider(Qt.Horizontal)
         self.mic_slider.setRange(0, 100)
@@ -79,6 +86,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.input_device = QtWidgets.QComboBox()
         self.ptt_checkbox = QtWidgets.QCheckBox("Push to Talk")
 
+        # Speaker controls (buttons + slider + combo + check)
         self.mute_spk_btn = QtWidgets.QPushButton("Mute Audio")
         self.spk_slider = QtWidgets.QSlider(Qt.Horizontal)
         self.spk_slider.setRange(0, 100)
@@ -86,17 +94,45 @@ class MainWindow(QtWidgets.QMainWindow):
         self.output_device = QtWidgets.QComboBox()
         self.vox_checkbox = QtWidgets.QCheckBox("Voice Activated")
 
-        # ── Top row ────────────────────────────────────────────────────────────
+        # ── Layout top row: Mic controls ─────────────────────────────
         audio_layout.addWidget(self.mute_mic_btn, 0, 0)
         audio_layout.addWidget(self.mic_slider, 0, 1)
         audio_layout.addWidget(self.input_device, 0, 2)
         audio_layout.addWidget(self.ptt_checkbox, 0, 3)
 
-        # ── Bottom row ─────────────────────────────────────────────────────────
+        # ── Layout second row: Speaker controls ──────────────────────
         audio_layout.addWidget(self.mute_spk_btn, 1, 0)
         audio_layout.addWidget(self.spk_slider, 1, 1)
         audio_layout.addWidget(self.output_device, 1, 2)
         audio_layout.addWidget(self.vox_checkbox, 1, 3)
+        
+        # ── Layout third row: Mic & Speaker level bars ───────────────
+        self.mic_level_bar = QtWidgets.QProgressBar()
+        self.mic_level_bar.setRange(0, 100)
+        self.mic_level_bar.setTextVisible(False)
+        self.mic_level_bar.setFixedHeight(10)
+
+        self.spk_level_bar = QtWidgets.QProgressBar()
+        self.spk_level_bar.setRange(0, 100)
+        self.spk_level_bar.setTextVisible(False)
+        self.spk_level_bar.setFixedHeight(10)
+
+        # ── Mic Gain Slider ────────────────────────────────────────────────
+        self.mic_gain_slider = QtWidgets.QSlider(Qt.Horizontal)
+        self.mic_gain_slider.setRange(10, 500)  # Represents 1.0 to 5.0 gain
+        self.mic_gain_slider.setValue(int(self.settings.get("mic_gain", 2.0) * 100))
+        self.mic_gain_slider.setToolTip("Mic Gain (1.0× to 5.0×)")
+        self.mic_gain_slider.valueChanged.connect(self.update_mic_gain)
+
+        audio_layout.addWidget(QtWidgets.QLabel("Mic Gain"), 2, 0)
+        audio_layout.addWidget(self.mic_gain_slider, 2, 1, 1, 3)
+
+        # Level‑meter row (row 3) – updated index
+        audio_layout.addWidget(QtWidgets.QLabel("Mic Level"),     3, 0)
+        audio_layout.addWidget(self.mic_level_bar,                3, 1)
+        audio_layout.addWidget(QtWidgets.QLabel("Speaker Level"), 3, 2)
+        audio_layout.addWidget(self.spk_level_bar,                3, 3)
+
 
         audio_controls.setLayout(audio_layout)
         right_layout.addWidget(audio_controls)
@@ -214,6 +250,33 @@ class MainWindow(QtWidgets.QMainWindow):
 
 
     # ── UI updates ───────────────────────────────────────────────────────
+    def update_mic_gain(self, value):
+        """
+        Called when mic gain slider is changed.
+        Saves to settings and applies immediately.
+        """
+        self.settings["mic_gain"] = value / 100.0  # Convert back to float
+        self.settings.save()
+
+    def update_mic_level(self, level: float):
+        """
+        Update the mic input level indicator.
+        Args:
+            level (float): Normalized input level (0.0 to 1.0)
+        """
+        value = max(0, min(int(level * 100), 100))
+        self.mic_level_bar.setValue(value)
+
+    def update_spk_level(self, level: float):
+        """
+        Update the speaker output level indicator.
+        Args:
+            level (float): Normalized output level (0.0 to 1.0)
+        """
+        value = max(0, min(int(level * 100), 100))
+        self.spk_level_bar.setValue(value)
+
+    
     def update_server_label(self):
         ip = self.settings.get("server_ip", "Unknown")
         port = self.settings.get("server_port", 12345)

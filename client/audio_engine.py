@@ -36,6 +36,8 @@ class AudioEngine(QtCore.QObject):
     spkStatusChanged = QtCore.Signal(bool)     # True = muted
     voxActivity = QtCore.Signal(bool)          # True = voice active
     inputLevel = QtCore.Signal(float)          # Mic level (RMS)
+    outputLevel = QtCore.Signal(float)  # Speaker output level (RMS)
+
 
     SAMPLE_RATE = 48000          # Opus standard sample rate
     CHANNELS = 1                 # Mono audio for voice
@@ -61,6 +63,7 @@ class AudioEngine(QtCore.QObject):
         self.mic_muted = False
         self.mic_paused = False 
         self.spk_muted = False
+        self.ptt_pressed = False  # Track PTT state from GUI
         self.ptt_enabled = self.settings.get("ptt", False)
         self.vox_enabled = self.settings.get("vox", False)
 
@@ -229,7 +232,7 @@ class AudioEngine(QtCore.QObject):
 
             # ── Compute RMS for input level meter ────────────────────────
             rms = np.sqrt(np.mean(pcm.astype(np.float32) ** 2))
-            self.inputLevel.emit(rms)  # Emit signal for GUI mic level
+            self.inputLevel.emit(rms / 32768.0) # Emit signal for GUI mic level
 
             # ── Basic VOX (voice detection) ──────────────────────────────
             if self.vox_enabled:
@@ -255,9 +258,14 @@ class AudioEngine(QtCore.QObject):
             # ── Resample if device ≠ 48 kHz ───────────────────────────────
             if self.resample_input:
                 resampled = samplerate.resample(pcm, 48000 / self.dev_in_rate, 'sinc_fastest')
-                pcm_int16 = np.clip(resampled, -32768, 32767).astype(np.int16)
+                gain = self.settings.get("mic_gain", 2.0)  # 2× gain default
+                boosted = (resampled * gain).clip(-32768, 32767)
+                pcm_int16 = boosted.astype(np.int16)
             else:
-                pcm_int16 = pcm
+                gain = self.settings.get("mic_gain", 2.0)
+                boosted = (pcm.astype(np.float32) * gain).clip(-32768, 32767)
+                pcm_int16 = boosted.astype(np.int16)
+
 
             # ── Opus encode & ship ────────────────────────────────────────
             opus_bytes = self.encoder.encode(pcm_int16.tobytes(), self.opus_frames)
@@ -289,7 +297,11 @@ class AudioEngine(QtCore.QObject):
             pcm_bytes = self.decoder.decode(opus_bytes, self.FRAME_SIZE)
             # Convert PCM bytes to numpy int16 array for playback
             pcm_array = np.frombuffer(pcm_bytes, dtype='int16')
+            # Calculate RMS level normalized between 0-1 (max int16 = 32768)
+            rms_out = np.sqrt(np.mean(pcm_array.astype(np.float32) ** 2)) / 32768.0
+            self.outputLevel.emit(rms_out)
             outdata[:] = pcm_array.reshape((-1, self.CHANNELS))
+
         except Exception as e:
             logging.warning(f"Audio decoding error: {e}")
             outdata.fill(0)  # Output silence on error
@@ -323,6 +335,15 @@ class AudioEngine(QtCore.QObject):
         """
         # TODO: integrate with actual PTT key state detection (e.g., via pynput or Qt events)
         return True if self.ptt_enabled else False
+    
+    def set_ptt_pressed(self, pressed: bool):
+        """
+        Called by GUI to update Push-To-Talk key state in real time.
+        This is required for dynamic PTT gating in the input callback.
+        """
+        with self.lock:
+            self.ptt_pressed = pressed
+
 
     # ─── Setters to update mute/mode flags from GUI controls ───────────────
     def set_mic_muted(self, muted):
