@@ -151,12 +151,12 @@ def main():
         #print(f"{i}: {dev['name']} (input channels: {dev['max_input_channels']}, output channels: {dev['max_output_channels']})")
 
 
-    # Initialize network thread for communication with server
-    net_thread = NetworkThread(settings)
-    net_thread.start()
+    # Initialize network thread first (without audio_engine)
+    net_thread = NetworkThread(settings)  # create first
 
-    # Initialize audio engine for mic and speaker handling
-    audio_engine = AudioEngine(settings, net_thread, status_callback=None)  # Will set callback later
+    # Now create audio engine with net_thread
+    audio_engine = AudioEngine(settings, net_thread, status_callback=None)
+
     try:
         logging.debug("Starting AudioEngine")
         audio_engine.start()
@@ -166,6 +166,11 @@ def main():
         import traceback
         traceback.print_exc()
 
+    # If NetworkThread needs audio_engine reference, assign it after both are created
+    net_thread.audio_engine = audio_engine
+
+    # Now start network thread
+    net_thread.start()
 
 
     if args.loopback:
