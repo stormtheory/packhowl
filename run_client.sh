@@ -2,7 +2,7 @@
 cd "$(dirname "$0")"
 
 # Written by StormTheory
-# https://github.com/stormtheory/silent-link
+# https://github.com/stormtheory/packhowl
 
 ### Creates or opens the virtual Enviorment needed for app tools to run
 ##### Note you will need at least 4G of /tmp space available for the startup install.
