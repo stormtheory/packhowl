@@ -7,9 +7,10 @@ import numpy as np
 import opuslib
 import sounddevice as sd
 import samplerate
+import logging
 
 from PySide6 import QtCore  # Added for Qt signal support
-
+logging.basicConfig(level=logging.DEBUG, format='%(levelname)s: %(message)s')
 
 ###############################################################################
 # ─── Audio Handling (Encoder / Decoder / I/O) ──────────────────────────────
@@ -118,10 +119,6 @@ class AudioEngine(QtCore.QObject):
 
     # ── Helper: find a device index by name or fall back to system default ──
     def _find_device_index(self, name, *, is_input):
-        """
-        Returns the PortAudio device index that matches `name`.
-        If no name given or not found, returns None so sounddevice uses default.
-        """
         if not name:
             return None
         for idx, dev in enumerate(sd.query_devices()):
@@ -129,8 +126,11 @@ class AudioEngine(QtCore.QObject):
                 (is_input  and dev['max_input_channels']  > 0) or
                 (not is_input and dev['max_output_channels'] > 0)
             ):
+                logging.debug(f"Found device '{name}' as index {idx}")
                 return idx
-        return None  # fall back to default device
+        logging.warning(f"Device '{name}' not found. Falling back to default.")
+        return None
+
 
     # ── Start the audio subsystem: open streams & launch worker thread ──────
     def start(self):
