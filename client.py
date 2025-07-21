@@ -152,10 +152,13 @@ def main():
 
 
     # Initialize network thread first (without audio_engine)
+    
     net_thread = NetworkThread(settings)  # create first
-
+        
+        
     # Now create audio engine with net_thread
-    audio_engine = AudioEngine(settings, net_thread, status_callback=None)
+    audio_engine = AudioEngine(settings, net_thread)
+    net_thread.audio_engine = audio_engine
 
     try:
         logging.debug("Starting AudioEngine")
@@ -170,7 +173,14 @@ def main():
     net_thread.audio_engine = audio_engine
 
     # Now start network thread
-    net_thread.start()
+    try:
+        logging.debug("Starting NetworkThread")
+        net_thread.start()
+        logging.debug("NetworkThread started")
+    except Exception as e:
+        logging.debug(f"[Startup ERROR] NetworkThread failed to start: {e}")
+        import traceback
+        traceback.print_exc()
 
 
     if args.loopback:
