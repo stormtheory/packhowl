@@ -47,6 +47,11 @@ class ClientInfo:
     ip: str
     connected_at: float = field(default_factory=time.time)
 
+    # ── NEW: voice / mute bookkeeping ────────────────────────────────────────
+    tx: bool = False             # True while client is actively sending audio
+    muted: bool = False          # True if client set mic mute
+    last_audio: float = 0.0      # Timestamp of last audio frame received
+
 ###############################################################################
 # ─── Server core ────────────────────────────────────────────────────────────
 ###############################################################################
@@ -135,16 +140,25 @@ class Server:
                         # Update client info
                         self.clients[cn].cn = msg.get("name", cn)
                         self.clients[cn].ip = msg.get("ip", peername)
+                        self.clients[cn].muted = msg.get("muted", False)  # ── NEW
                         await self.broadcast_user_list()
                         continue  # don't forward 'init' to others
 
                     # Handle Opus audio frame forwarding
                     elif msg.get("type") == "audio":
-                        # Must contain 'frame' and 'from'
-                        if "frame" in msg and "from" in msg:
-                            await self.broadcast(msg, exclude=cn)
+                        if "data" in msg:                                   # ── NEW: changed key 'frame' → 'data'
+                            self.clients[cn].tx = True                       # mark talking
+                            self.clients[cn].last_audio = time.time()
+                            await self.broadcast_user_list()                # push TX status
+                            await self.broadcast(msg, exclude=cn)           # relay frame
                         else:
                             self.log(f"[WARN] invalid audio msg from {cn}")
+
+                    # ── NEW: mute/unmute message -------------------------------------------------
+                    elif msg.get("type") == "muted":
+                        self.clients[cn].muted = bool(msg.get("value", False))
+                        await self.broadcast_user_list()
+                    # ---------------------------------------------------------------------------
 
                     # Handle chat or control messages
                     else:
@@ -185,9 +199,10 @@ class Server:
         user_list = []
         for client in self.clients.values():
             user_list.append({
-                "name": client.cn,
-                "ip": client.ip,
-                # Optionally: add 'tx', 'muted' flags here later
+                "name":  client.cn,
+                "ip":    client.ip,
+                "tx":    client.tx,     # ── NEW: actively transmitting flag
+                "muted": client.muted   # ── NEW: mic muted flag
             })
 
         message = json.dumps({
@@ -215,6 +230,20 @@ class Server:
             except (ConnectionResetError, BrokenPipeError):
                 self.clients.pop(cn, None)
 
+    # ── NEW: periodic watcher to reset TX after silence ──────────────────────
+    async def _voice_watcher(self):
+        """Clears tx flag ~300 ms after last audio frame to keep indicator fresh."""
+        while True:
+            await asyncio.sleep(0.3)
+            now = time.time()
+            dirty = False
+            for c in self.clients.values():
+                if c.tx and now - c.last_audio > 0.3:
+                    c.tx = False
+                    dirty = True
+            if dirty:
+                await self.broadcast_user_list()
+
     # ▒▒▒ util: logging ▒▒▒
     def log(self, *a) -> None:
         """Simple timestamped print."""
@@ -234,6 +263,9 @@ class Server:
         self.log(f"[SILENT LINK] serving on {addr}")
 
         #logging.debug(f"🔐 TLS version: {conn.version()}, cipher: {conn.cipher()}")
+
+        # ── NEW: launch voice activity watcher task ─────────────────────────
+        asyncio.create_task(self._voice_watcher())
 
         async with server:
             await server.serve_forever()
