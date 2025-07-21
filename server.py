@@ -10,10 +10,16 @@ import argparse, asyncio, json, ssl, time
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Dict
-from common import (PORT, SERVER_BIND, SSL_CERT_PATH, SSL_CA_PATH, MAX_USERS,
+from common import (SERVER_BIND, SSL_CERT_PATH, SSL_CA_PATH, MAX_USERS,
                     ensure_data_dirs)
+from common import SERVER_PORT as PORT
 
 print(f"CERT: {SSL_CERT_PATH}, CA: {SSL_CA_PATH}")
+
+
+def get_user_list(self) -> list[dict]:
+    """Build list of connected users with display name and IP."""
+    return [{"name": c.cn, "ip": c.ip} for c in self.clients.values()]
 
 ###############################################################################
 # ─── Data structures ────────────────────────────────────────────────────────
@@ -32,7 +38,7 @@ class ClientInfo:
 # ─── Server core ────────────────────────────────────────────────────────────
 ###############################################################################
 
-class SilentLinkServer:
+class Server:
     def __init__(self, debug: bool = False):
         self.debug = debug
         self.clients: Dict[str, ClientInfo] = {}  # key = CN
@@ -83,11 +89,13 @@ class SilentLinkServer:
 
     # ▒▒▒ connection handler ▒▒▒
     async def handle_client(self, reader: asyncio.StreamReader,
-                            writer: asyncio.StreamWriter) -> None:
+                        writer: asyncio.StreamWriter) -> None:
+        cn = "UNKNOWN"
         try:
             peername = writer.get_extra_info("peername")[0]
             cert = writer.get_extra_info("peercert")
             cn = cert["subject"][0][0][1] if cert else "UNKNOWN"
+
             if len(self.clients) >= MAX_USERS:
                 writer.close()
                 await writer.wait_closed()
@@ -97,6 +105,11 @@ class SilentLinkServer:
             self.clients[cn] = info
             self.log(f"+ {cn} @ {peername}")
 
+            await self.broadcast_user_list()  # broadcast on new connection
+
+            if self.debug:
+                self.print_user_table()
+
             # ── Protocol: line-delimited JSON messages ────────────────────
             while True:
                 raw = await reader.readline()
@@ -104,8 +117,18 @@ class SilentLinkServer:
                     break
                 try:
                     msg = json.loads(raw.decode())
-                    # Echo chat/audio control to all other clients
+
+                    # Handle init message specially before broadcast
+                    if msg.get("type") == "init":
+                        # Update client info
+                        self.clients[cn].cn = msg.get("name", cn)
+                        self.clients[cn].ip = msg.get("ip", peername)
+                        await self.broadcast_user_list()
+                        continue  # don't forward 'init' to others
+
+                    # Broadcast other messages to all except sender
                     await self.broadcast(msg, exclude=cn)
+
                 except Exception as exc:
                     self.log(f"[WARN] bad msg from {cn}: {exc}")
 
@@ -114,13 +137,51 @@ class SilentLinkServer:
         except Exception as e:
             self.log(f"[ERR] {e}")
         finally:
-            # Clean-up
+            # Clean-up client on disconnect
             self.clients.pop(cn, None)
-            writer.close()
-            await writer.wait_closed()
+            try:
+                writer.write_eof()  # optional, may not be supported
+            except Exception:
+                pass
+
+            try:
+                await writer.drain()
+                writer.close()
+                await writer.wait_closed()
+            except Exception as e:
+                self.log(f"[WARN] Close error: {e}")
+
+            # Broadcast updated user list after disconnect
+            await self.broadcast_user_list()
+
             self.log(f"- {cn}")
             if self.debug:
                 self.print_user_table()
+
+
+    # ▒▒▒ broadcast user list ▒▒▒
+    async def broadcast_user_list(self):
+        """Send the updated user list to all connected clients."""
+        user_list = []
+        for client in self.clients.values():
+            user_list.append({
+                "name": client.cn,
+                "ip": client.ip,
+                # Optionally: add 'tx', 'muted' flags here later
+            })
+
+        message = json.dumps({
+            "type": "userlist",
+            "users": user_list
+        }) + "\n"
+
+        for client in self.clients.values():
+            try:
+                client.writer.write(message.encode())
+                await client.writer.drain()
+            except Exception as e:
+                self.log(f"[WARN] Failed to send user list to {client.cn}: {e}")
+
 
     # ▒▒▒ broadcast helper ▒▒▒
     async def broadcast(self, msg: dict, exclude: str | None = None) -> None:
@@ -165,7 +226,7 @@ def main() -> None:
     parser.add_argument("--debug", action="store_true",
                         help="print live user table on connect/disconnect")
     args = parser.parse_args()
-    srv = SilentLinkServer(debug=args.debug)
+    srv = Server(debug=args.debug)
     try:
         asyncio.run(srv.run())
     except KeyboardInterrupt:
