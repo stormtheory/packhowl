@@ -1,13 +1,15 @@
-# Silent Link
+# Pack Howl
+### Secure voice and chat, only your Pack can hear.
 
-Encrypted, private voice + chat client and server written in Python 3.12 using PySide6, sounddevice, and TLS mutual auth.
+Encrypted, self-hosted, private voice + chat client and server written in Python 3.12 by StormTheory using PySide6, sounddevice, and opuslib encoder/decoder. Focused on trusted group communications with mutual identity/auth TLS layers, so you know it is your Pack.
 
 <img width="960" height="528" alt="Image" src="https://github.com/user-attachments/assets/a0ecd737-322c-4bc7-951b-c6976737528d" />
 
-- ✅ Private, secure, self-hosted, and no third parties.
+- ✅ Private, secure, self-hosted [✔] no ads [✔] no spy-ware [✔] opensource [✔] no cost [✔] no third parties.
+- ✅ Low Server CPU and memory use. [✔] Fast and powerful.
+- ✅ Linux based server and client. [✔] Will listen to requests for windows clinets.
 - ✅ Secure, TLS-only, within your trusted enclave with shared Auth certs.
 - ✅ Clients send encoded PCM with Opus to the server via TLS encrypted tunnel and server only forwards to other clients.
-- ✅ Low Server CPU and memory use.
 - ✅ Binary-safe Opus forwarding supported using opuslib encoder/decoder.
 
 # In the Works:
@@ -15,10 +17,12 @@ Guiding Principle(s):
 - As always: Fighting to keep this AI free, private, opensource, fast, and easy (in that order).
 
 Short-term:
-- Getting a stable and tested product.
+- [ ] Getting a stable and tested product.
+- [ ] Audio Tones for join, message alert, disconnect, and alerts
+- 
 
 Long-term:
-- None at this time.
+- Supporting project and fan-base.
 
 Upon Request:
 - Add YUM support.
@@ -43,7 +47,7 @@ If there is interest in other Linux flavors/families please let me know or it's 
 1) Download the latest released .deb package file off of github and install on your system.
 2) Build DEB Install file:
 	
-	Download the zip file of the code, off of Github. This is found under the [<> Code] button on https://github.com/stormtheory/silent-link.
+	Download the zip file of the code, off of Github. This is found under the [<> Code] button on https://github.com/stormtheory/packhowl.
 	
 	Extract directory from the zip file. Run the build script in the directory. 
 
@@ -53,15 +57,20 @@ If there is interest in other Linux flavors/families please let me know or it's 
 
 3) Install without Package Manager, run commands:
 
-	Download the zip file of the code, off of Github. This is found under the [<> Code] button on https://github.com/stormtheory/silent-link.
+	Download the zip file of the code, off of Github. This is found under the [<> Code] button on https://github.com/stormtheory/packhowl.
 
 	Extract directory from the zip file. Run the following commands within the directory.
 
-        # Install script for llama3 LLM:
-        friday/install_ollama.sh
+        # Install script for server:
+            chmod 700 setup-server.sh
+            ./setup-server.sh
+               # run through setup script and install system user and generate keys and start server.
+               # Edit config.py as needed for many different options.
 
-        # If you want to try the French Fully-Opensource LLM Mistral then:
-        friday/install_mistral_from_TheBloke.sh
+        # Client install:
+            mkdir -p ~/.packhowl/certs
+               # Install ca.pem and {hostname}.pem that was generated from the server in your ~/.packhowl/certs
+            ./run_client.sh
 
 # RUN:
 ### run the local Windowed App

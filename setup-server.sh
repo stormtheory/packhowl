@@ -7,9 +7,9 @@ if [ "$ID" != 0 ];then
         exit
 fi
 
-user=silentlink
-SERVICE=silentlink.service
-SSL_CERTS_DIR=.silentlink/certs
+user=packhowl
+SERVICE=packhowl.service
+SSL_CERTS_DIR=.packhowl/certs
 
 
 ####################### SETUP USER ##############################################
@@ -98,7 +98,7 @@ echo " -- Create systemd service"
 DIR_PATH=$(pwd)
 cat <<EOF > /etc/systemd/system/$SERVICE
 [Unit]
-Description=--- SilentLink Service---
+Description=--- Pack Howl Service---
 After=default.target
 
 [Service]
