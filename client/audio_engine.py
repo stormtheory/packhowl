@@ -7,9 +7,10 @@ import numpy as np
 import opuslib
 import sounddevice as sd
 import samplerate
+import logging
 
 from PySide6 import QtCore  # Added for Qt signal support
-
+logging.basicConfig(level=logging.DEBUG, format='%(levelname)s: %(message)s')
 
 ###############################################################################
 # ─── Audio Handling (Encoder / Decoder / I/O) ──────────────────────────────
@@ -60,6 +61,7 @@ class AudioEngine(QtCore.QObject):
         )
 
         # Internal flags for mute states and modes
+        self.loopback_enabled = False
         self.mic_muted = False
         self.mic_paused = False 
         self.spk_muted = False
@@ -117,10 +119,6 @@ class AudioEngine(QtCore.QObject):
 
     # ── Helper: find a device index by name or fall back to system default ──
     def _find_device_index(self, name, *, is_input):
-        """
-        Returns the PortAudio device index that matches `name`.
-        If no name given or not found, returns None so sounddevice uses default.
-        """
         if not name:
             return None
         for idx, dev in enumerate(sd.query_devices()):
@@ -128,8 +126,11 @@ class AudioEngine(QtCore.QObject):
                 (is_input  and dev['max_input_channels']  > 0) or
                 (not is_input and dev['max_output_channels'] > 0)
             ):
+                logging.debug(f"Found device '{name}' as index {idx}")
                 return idx
-        return None  # fall back to default device
+        logging.warning(f"Device '{name}' not found. Falling back to default.")
+        return None
+
 
     # ── Start the audio subsystem: open streams & launch worker thread ──────
     def start(self):
@@ -273,6 +274,13 @@ class AudioEngine(QtCore.QObject):
                 "type": "audio",
                 "data": opus_bytes.hex()  # hex for JSON safety
             })
+            
+            # Loopback monitoring: enqueue audio locally for playback
+            if self.loopback_enabled:
+                try:
+                    self.incoming_audio_queue.put_nowait(opus_bytes.hex())
+                except asyncio.QueueFull:
+                    pass
 
         except Exception as e:
             print(f"[Audio][ERR] Input callback error: {e}")
@@ -343,6 +351,14 @@ class AudioEngine(QtCore.QObject):
         """
         with self.lock:
             self.ptt_pressed = pressed
+
+    def set_loopback_enabled(self, enabled: bool):
+        """
+        Enables or disables loopback monitoring (mic to speaker).
+        Emits RMS and queues mic audio to output for self-monitoring.
+        """
+        with self.lock:
+            self.loopback_enabled = enabled
 
 
     # ─── Setters to update mute/mode flags from GUI controls ───────────────

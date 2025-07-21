@@ -21,6 +21,7 @@ import logging
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-d", "--debug", action='store_true', help='Run GUI in debug mode')
+parser.add_argument("-l", "--loopback", action="store_true", help="Enable mic-to-speaker loopback at startup")
 args = parser.parse_args()
 
 ### SET LOGGING LEVEL
@@ -141,6 +142,14 @@ def main():
             settings.save()  # Save immediately after first run setup
         else:
             sys.exit(0)
+            
+    print("Using input device:", settings.get("input_device"))
+    print("Using output device:", settings.get("output_device"))
+
+    #import sounddevice as sd
+    #for i, dev in enumerate(sd.query_devices()):
+        #print(f"{i}: {dev['name']} (input channels: {dev['max_input_channels']}, output channels: {dev['max_output_channels']})")
+
 
     # Initialize network thread for communication with server
     net_thread = NetworkThread(settings)
@@ -148,6 +157,12 @@ def main():
 
     # Initialize audio engine for mic and speaker handling
     audio_engine = AudioEngine(settings, net_thread, status_callback=None)  # Will set callback later
+    print("Starting AudioEngine")
+    audio_engine.start()
+
+
+    if args.loopback:
+        audio_engine.set_loopback_enabled(True)
 
     # Create main GUI window
     window = MainWindow(settings, net_thread, audio_engine)
