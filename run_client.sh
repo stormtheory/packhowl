@@ -131,6 +131,7 @@ if [ "$PIP_INSTALL" == True ];then
 
         ### Audio/Voice
         pip install sounddevice
+	pip install numpy
 
 
 touch $PYENV_DIR/$RUN
