@@ -11,7 +11,6 @@ cd "$(dirname "$0")"
 
 PYENV_DIR='./.venv'
 RUN='.run_client_installed'
-APP='packhowl'
 
 # No running as root!
 ID=$(id -u)
@@ -22,19 +21,28 @@ fi
 
 
 # CAN ONLY BE ONE!!!!
+APP='packhowl'
 RAM_DIR='/dev/shm'
 BASENAME=$(basename $0)
 RAM_FILE="${RAM_DIR}/${APP}-${BASENAME}.lock"
-if [ -f "$RAM_FILE" ]; then
-    echo "RAM lock file exists: $RAM_FILE"
-    exit
+fs_type=$(stat -f -c %T "$RAM_DIR")
+if [ -d $RAM_DIR ];then
+        if [[ "$fs_type" == "tmpfs" ]] || [[ "$fs_type" == "ramfs" ]]; then
+                if [ -f $RAM_FILE ]; then
+                echo "RAM lock file exists: $RAM_FILE"
+                exit
+                else
+                        touch $RAM_FILE
+                        chmod 600 $RAM_FILE
+                        # Cleanup on exit
+                        trap 'rm -f "$RAM_FILE"; echo "[*] Lock released."; exit' INT TERM EXIT
+                fi
+        else
+                echo "[-] '$RAM_DIR' is NOT on a RAM disk (type: $fs_type)"
+        fi
 else
-	touch $RAM_FILE
-	function CLEAN_UP {
-	rm -f "$RAM_FILE"
-	}
+        echo "ERROR: $RAM_DIR not present to lock app."
 fi
-
 
 
 # 🛡️ Set safe defaults
@@ -185,7 +193,6 @@ if [ $LOOPBACK == true ];then
 	#### Run the AI
 		echo "Starting Client"
 		python3 client.py -l
-		CLEAN_UP
 		exit 0        
 elif [ $DEBUG == true ];then
 	#### Export Variables
@@ -193,7 +200,6 @@ elif [ $DEBUG == true ];then
 	#### Run the AI
 		echo "Starting Client"
 		python3 client.py -d
-		CLEAN_UP
 		exit 0
 elif [ $APP == true ];then
 	#### Export Variables
@@ -201,9 +207,7 @@ elif [ $APP == true ];then
 	#### Run the AI
 		echo "Starting Client"
 		python3 client.py
-		CLEAN_UP
 		exit 0
 fi
 echo "ERROR!"
-CLEAN_UP
 exit 1
