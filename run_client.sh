@@ -19,6 +19,22 @@ if [ "$ID" == '0'  ];then
         exit
 fi
 
+# CAN ONLY BE ONE!!!!
+# --- Get full, resolved path to the script ---
+SCRIPT_PATH=$(readlink -f "$0")                 # Full path to this script
+SCRIPT_NAME=$(basename "$SCRIPT_PATH")          # Just the filename
+SCRIPT_DIR=$(dirname "$SCRIPT_PATH")            # Parent directory path
+
+# --- Count instances of this exact script (excluding our own PID) ---
+RUNNING=$(ps -eo pid,args | grep "$SCRIPT_PATH" | grep -v " $$" | grep -v "^ *$$ " | wc -l)
+
+# --- Exit if another instance is running ---
+if [[ "$RUNNING" -ge 1 ]]; then
+  echo "Another instance of $SCRIPT_NAME in $SCRIPT_DIR is running. Exiting."
+  exit 1
+fi
+
+
 # 🛡️ Set safe defaults
 set -euo pipefail
 IFS=$'\n\t'
