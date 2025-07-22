@@ -3,11 +3,15 @@
 
 Encrypted, self-hosted, private voice + chat client and server written in Python 3.12 by StormTheory using PySide6, sounddevice, and opuslib encoder/decoder. Focused on trusted group communications with mutual identity/auth TLS layers, so you know it is your Pack.
 
+Please submit all problems/issues/sugeestions to https://github.com/stormtheory/packhowl/issues
+
+
 <img width="960" height="528" alt="Image" src="https://github.com/user-attachments/assets/2e5233bf-a033-417d-9f5d-61870d3652b5" />
+
 
 - ✅ Private, secure, self-hosted [✔] no ads [✔] no spy-ware [✔] opensource [✔] no cost [✔] no third parties.
 - ✅ Low Server CPU and memory use. [✔] Fast and powerful.
-- ✅ Linux based server and client. [✔] Will listen to requests for windows clinets.
+- ✅ Linux based server and client. [✔] Will listen to requests for porting to windows client app.
 - ✅ Secure, TLS-only, within your trusted enclave with shared Auth certs.
 - ✅ Clients send encoded PCM with Opus to the server via TLS encrypted tunnel and server only forwards to other clients.
 - ✅ Binary-safe Opus forwarding supported using opuslib encoder/decoder.
@@ -17,9 +21,9 @@ Guiding Principle(s):
 - As always: Fighting to keep this AI free, private, opensource, fast, and easy (in that order).
 
 Short-term:
-- [ ] Getting a stable and tested product.
+- ✅ Getting a stable and tested product.
+- [ ] Adding a text sizing dropdown for chatbot ext size.
 - [ ] Audio Tones for join, message alert, disconnect, and alerts
-- 
 
 Long-term:
 - Supporting project and fan-base.
