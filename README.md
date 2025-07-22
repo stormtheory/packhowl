@@ -3,7 +3,7 @@
 
 Encrypted, self-hosted, private voice + chat client and server written in Python 3.12 by StormTheory using PySide6, sounddevice, and opuslib encoder/decoder. Focused on trusted group communications with mutual identity/auth TLS layers, so you know it is your Pack.
 
-<img width="960" height="528" alt="Image" src="https://github.com/user-attachments/assets/a0ecd737-322c-4bc7-951b-c6976737528d" />
+<img width="960" height="528" alt="Image" src="https://github.com/user-attachments/assets/2e5233bf-a033-417d-9f5d-61870d3652b5" />
 
 - ✅ Private, secure, self-hosted [✔] no ads [✔] no spy-ware [✔] opensource [✔] no cost [✔] no third parties.
 - ✅ Low Server CPU and memory use. [✔] Fast and powerful.
