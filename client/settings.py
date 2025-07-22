@@ -17,7 +17,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "audio_input":  "default",    # Selected audio input device
     "audio_output": "default",    # Selected audio output device
 
-    "ptt_key":      "LeftAlt",    # Default push-to-talk hotkey
+    "ptt_key":      "leftalt",    # Default push-to-talk hotkey
     "ptt":          False,        # Push-to-talk toggle state
     "vox":          False,        # Voice activation toggle state
 

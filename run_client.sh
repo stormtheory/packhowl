@@ -139,6 +139,9 @@ if [ "$PIP_INSTALL" == True ];then
         pip install PySide6
         pip install pyside6-essentials
 
+        ### Keyboard hotkeys
+        pip install pynput
+
         ### Audio/Voice
         pip install sounddevice
 	pip install numpy

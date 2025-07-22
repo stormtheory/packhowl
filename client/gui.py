@@ -11,11 +11,13 @@ from PySide6 import QtWidgets, QtGui, QtCore
 from PySide6.QtCore import Qt
 import sounddevice as sd
 import logging
+from pynput import keyboard
 
 from config import (APP_NAME, APP_ICON_PATH, CLIENT_IP, SSL_CA_PATH, CERTS_DIR,
                     DATA_DIR, ensure_data_dirs)
 from config import SERVER_PORT as DEFAULT_SERVER_PORT
 
+logging.basicConfig(level=logging.DEBUG, format='%(levelname)s: %(message)s')
 
 class MainWindow(QtWidgets.QMainWindow):
     RATE_LIMIT_MS = 1000  # 1 message per second rate limit
@@ -30,7 +32,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.audio_engine.inputLevel.connect(self.update_mic_level)
             self.audio_engine.outputLevel.connect(self.update_spk_level)
 
-
+        self.start_global_ptt_listener()
 
         # Create a central widget container for QMainWindow
         central_widget = QtWidgets.QWidget()
@@ -232,6 +234,83 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ptt_key = key_map.get(ptt_key_str, Qt.Key_Alt)
         self.ptt_pressed = False
         self.installEventFilter(self)
+        
+    def start_global_ptt_listener(self):
+        """
+        Starts a daemon thread that listens for the configured PTT key
+        even when the application is not focused.
+        """
+        # ------------------------------------------------------------------
+        # 1. Resolve the key the user chose in settings
+        # ------------------------------------------------------------------
+        ptt_key_name = self.settings.get("ptt_key", "leftalt")   # e.g. "LeftAlt"
+        ptt_name_lc  = ptt_key_name.lower()
+
+        # map settings‑string → list of pynput Key objects (for non‑character keys)
+        special_map = {
+            "leftalt":   [keyboard.Key.alt_l],
+            "rightalt":  [keyboard.Key.alt_r],
+            "alt":       [keyboard.Key.alt, keyboard.Key.alt_l, keyboard.Key.alt_r],
+            "leftctrl":  [keyboard.Key.ctrl_l],
+            "rightctrl": [keyboard.Key.ctrl_r],
+            "ctrl":      [keyboard.Key.ctrl, keyboard.Key.ctrl_l, keyboard.Key.ctrl_r],
+            "leftshift": [keyboard.Key.shift_l],
+            "rightshift":[keyboard.Key.shift_r],
+            "shift":     [keyboard.Key.shift, keyboard.Key.shift_l, keyboard.Key.shift_r],
+            "space":     [keyboard.Key.space],
+            "f1":        [keyboard.Key.f1],
+            "f2":        [keyboard.Key.f2],
+            # … add more if you need them
+        }
+
+        # Character key?  (letters, numbers, etc.)
+        if ptt_name_lc not in special_map:
+            self._ptt_is_special   = False
+            self._ptt_char_expected = ptt_name_lc  # single lowercase char
+            self._ptt_special_keys  = []
+        else:
+            self._ptt_is_special   = True
+            self._ptt_char_expected = None
+            self._ptt_special_keys  = special_map[ptt_name_lc]
+
+        # ------------------------------------------------------------------
+        # 2. Helper to decide if the incoming pynput key matches PTT
+        # ------------------------------------------------------------------
+        def _matches_ptt(key) -> bool:
+            if self._ptt_is_special:
+                return key in self._ptt_special_keys
+            # character key
+            try:
+                return key.char and key.char.lower() == self._ptt_char_expected
+            except AttributeError:
+                return False    # key.char doesn't exist on special keys
+
+        # ------------------------------------------------------------------
+        # 3. Handlers
+        # ------------------------------------------------------------------
+        def on_press(key):
+            if _matches_ptt(key) and not self.ptt_pressed:
+                self.ptt_pressed = True
+                self.audio_engine.set_ptt_pressed(True)
+                logging.debug("[GlobalPTT] key pressed")
+
+        def on_release(key):
+            if _matches_ptt(key) and self.ptt_pressed:
+                self.ptt_pressed = False
+                self.audio_engine.set_ptt_pressed(False)
+                logging.debug("[GlobalPTT] key released")
+
+        # ------------------------------------------------------------------
+        # 4. Start the daemon listener
+        # ------------------------------------------------------------------
+        self.global_ptt_listener = keyboard.Listener(
+            on_press=on_press,
+            on_release=on_release,
+            suppress=False,      # do NOT block the key for other apps
+        )
+        self.global_ptt_listener.daemon = True
+        self.global_ptt_listener.start()
+        logging.info("[GlobalPTT] listener started")
 
     def eventFilter(self, obj, event):
         if event.type() == QtCore.QEvent.KeyPress:
@@ -431,6 +510,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
     # Ensure graceful cleanup on app exit
     def cleanup(self):
+        if hasattr(self, "global_ptt_listener"):
+            self.global_ptt_listener.stop()
+        if getattr(self, "global_ptt_listener", None):
+            self.global_ptt_listener.stop()
         self.audio_engine.stop()
         self.net.stop()
         self.net.wait()
+
