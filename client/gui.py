@@ -391,8 +391,8 @@ class MainWindow(QtWidgets.QMainWindow):
             if name == self.settings.get("display_name", ""):
                 name += " (you)"
 
-            # Status indicator: tx (talking), muted, default
-            status_icon = "🟢" if u.get("tx") else "🔴" if u.get("muted") else " "
+            # Status indicator: tx 🟢 (talking), muted, default
+            status_icon = "💬" if u.get("tx") else "🔴" if u.get("muted") else " "
 
             item = QtWidgets.QTreeWidgetItem([status_icon, name, u.get("ip", "")])
             self.users.addTopLevelItem(item)
@@ -402,8 +402,9 @@ class MainWindow(QtWidgets.QMainWindow):
         try:
             if msg.get("type") == "chat":
                 # Safe handling of expected chat messages
+                print(msg)
                 self.chat_view.append(
-                    f"<b>{msg.get('name', 'Unknown')}</b>: {msg.get('text', '')}"
+                    f"<b>{msg.get('display_name', 'Unknown')}</b>: {msg.get('text', '')}"
                 )
             else:
                 # Unexpected message type — log it for debugging
@@ -440,7 +441,7 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         self._last_sent_msecs = now
 
-        payload = {"type": "chat", "text": text[:512]}  # Limit length
+        payload = {"display_name": self.settings.get("display_name", "Unknown"), "type": "chat", "text": text[:512]}  # Limit length
 
         # Echo locally
         self.add_chat({"type": "chat", "name": self.settings.get("display_name", "Unknown"), "text": text})

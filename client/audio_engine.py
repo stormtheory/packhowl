@@ -11,7 +11,7 @@ import logging
 import time
 from PySide6.QtCore import QMetaObject, Qt, Slot  # near other QtCore imports
 from PySide6 import QtCore  # Added for Qt signal support
-logging.basicConfig(level=logging.DEBUG, format='%(levelname)s: %(message)s')
+#logging.basicConfig(level=logging.DEBUG, format='%(levelname)s: %(message)s')
 
 ###############################################################################
 # ─── Audio Handling (Encoder / Decoder / I/O) ──────────────────────────────
