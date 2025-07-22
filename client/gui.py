@@ -129,9 +129,9 @@ class MainWindow(QtWidgets.QMainWindow):
         audio_layout.addWidget(self.mic_gain_slider, 2, 1, 1, 3)
 
         # Level‑meter row (row 3) – updated index
-        audio_layout.addWidget(QtWidgets.QLabel("Mic Level"),     3, 0)
+        audio_layout.addWidget(QtWidgets.QLabel("Mic Level", alignment=Qt.AlignRight),     3, 0)
         audio_layout.addWidget(self.mic_level_bar,                3, 1)
-        audio_layout.addWidget(QtWidgets.QLabel("Speaker Level"), 3, 2)
+        audio_layout.addWidget(QtWidgets.QLabel("Speaker Level", alignment=Qt.AlignRight), 3, 2)
         audio_layout.addWidget(self.spk_level_bar,                3, 3)
 
 
@@ -165,7 +165,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.net.chatmsg.connect(self._handle_incoming_msg)
 
         # ── Restore mute states and connect buttons ─────────────────
-        self.mic_muted = False
+        self.mic_muted = True
         self.spk_muted = False
         self._update_mute_buttons()
 
@@ -384,8 +384,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._update_mute_buttons()
 
     def _update_mute_buttons(self):
-        self.mute_mic_btn.setText("Unmute Mic" if self.mic_muted else "Mute Mic")
-        self.mute_spk_btn.setText("Unmute Audio" if self.spk_muted else "Mute Audio")
+        self.mute_mic_btn.setText("🔇 Mic" if self.mic_muted else "🎤 Mic")
+        self.mute_spk_btn.setText("🔇 Audio" if self.spk_muted else "🔉 Audio")
 
     # ── Settings save methods for audio controls ─────────────────────────
     def save_mic_vol(self, value):

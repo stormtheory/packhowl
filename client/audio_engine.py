@@ -70,8 +70,8 @@ class AudioEngine(QtCore.QObject):
         self.mic_paused = False 
         self.spk_muted = False
         self.ptt_pressed = False  # Track PTT state from GUI
-        self.ptt_enabled = self.settings.get("ptt", False)
-        self.vox_enabled = self.settings.get("vox", False)
+        #self.ptt_enabled = self.settings.get("ptt", False)
+        #self.vox_enabled = self.settings.get("vox", False)
 
         # Audio stream objects for input/output, initialized in start()
         self.stream_in = None
