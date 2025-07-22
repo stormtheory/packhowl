@@ -280,7 +280,7 @@ class AudioEngine(QtCore.QObject):
                     #logging.debug("[Audio][_input_callback] VOX enabled but no voice detected, skipping frame")
                     return  # Skip sending audio because VOX inactive
             else:
-                logging.debug(f"[Audio][OPEN MIC] 1")
+                #logging.debug(f"[Audio][OPEN MIC] 1")
                 # Open Mic mode — always send audio, reset VOX state if needed
                 if self.vox_active:
                     self.vox_active = False
@@ -444,14 +444,14 @@ class AudioEngine(QtCore.QObject):
                 # Unknown mode — default to PTT
                 self.ptt_enabled = True
                 self.vox_enabled = False
-        logging.info(f"[AudioEngine] Audio mode set to: {mode}")
+        #logging.info(f"[AudioEngine] Audio mode set to: {mode}")
 
 
     def set_ptt_pressed(self, pressed: bool):
         with self.lock:
             if self.ptt_pressed != pressed:
                 self.ptt_pressed = pressed
-                logging.debug(f"[AudioEngine] PTT pressed set to: {pressed}")
+                #logging.debug(f"[AudioEngine] PTT pressed set to: {pressed}")
 
 
     def set_loopback_enabled(self, enabled: bool):
