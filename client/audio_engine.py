@@ -11,7 +11,8 @@ import logging
 import time
 from PySide6.QtCore import QMetaObject, Qt, Slot  # near other QtCore imports
 from PySide6 import QtCore  # Added for Qt signal support
-#logging.basicConfig(level=logging.DEBUG, format='%(levelname)s: %(message)s')
+
+logging.basicConfig(level=logging.DEBUG, format='%(levelname)s: %(message)s')
 
 ###############################################################################
 # ─── Audio Handling (Encoder / Decoder / I/O) ──────────────────────────────
@@ -263,20 +264,20 @@ class AudioEngine(QtCore.QObject):
             pcm = indata[:, 0].copy()
             rms = np.sqrt(np.mean(pcm.astype(np.float32) ** 2))
             
-            logging.debug(f"[Audio][Mic Mode Check] 1")
+            #logging.debug(f"[Audio][Mic Mode Check] 1")
             if self.ptt_enabled:
-                logging.debug(f"[Audio][PTT Check] Enabled 1")
+                #logging.debug(f"[Audio][PTT Check] Enabled 1")
                 if not self.ptt_pressed:
-                    logging.debug("[Audio][_input_callback] PTT enabled but not pressed, skipping frame 1")
+                    #logging.debug("[Audio][_input_callback] PTT enabled but not pressed, skipping frame 1")
                     return
             elif self.vox_enabled:
-                logging.debug(f"[Audio][VOX] Enabled 1")
+                #logging.debug(f"[Audio][VOX] Enabled 1")
                 new_vox = bool(rms >= self.vox_threshold)
                 if new_vox != self.vox_active:
                     self.vox_active = new_vox
                     self.voxActivity.emit(new_vox)
                 if not new_vox:
-                    logging.debug("[Audio][_input_callback] VOX enabled but no voice detected, skipping frame")
+                    #logging.debug("[Audio][_input_callback] VOX enabled but no voice detected, skipping frame")
                     return  # Skip sending audio because VOX inactive
             else:
                 logging.debug(f"[Audio][OPEN MIC] 1")
@@ -366,7 +367,7 @@ class AudioEngine(QtCore.QObject):
         try:
             opus_packet = self.incoming_audio_queue.get_nowait()
         except asyncio.QueueEmpty:
-            logging.debug("[Audio][OutputCallback] Output queue empty - filling silence")
+            #logging.debug("[Audio][OutputCallback] Output queue empty - filling silence")
             outdata.fill(0)
             return
 
@@ -421,7 +422,6 @@ class AudioEngine(QtCore.QObject):
                 ticks += 1
                 if ticks % 5 == 0:
                     self.watchdog()
-
         finally:
             loop.close()
 

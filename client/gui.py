@@ -56,7 +56,11 @@ class MainWindow(QtWidgets.QMainWindow):
         left_layout = QtWidgets.QVBoxLayout()
         self.server_lbl = QtWidgets.QLabel()
         self.users = QtWidgets.QTreeWidget()
-        self.users.setHeaderLabels(["🟢", "Name", "IP"])
+        self.users.setHeaderLabels(["SPK", "MIC", "Name", "IP"])
+        self.users.setColumnWidth(0, 50)   # SPK
+        self.users.setColumnWidth(1, 50)   # MIC
+        self.users.setColumnWidth(2, 120)  # Name
+        self.users.setColumnWidth(3, 100)  # IP
         self.status = QtWidgets.QListWidget()
         left_layout.addWidget(self.server_lbl)
         left_layout.addWidget(self.users, 3)
@@ -390,11 +394,12 @@ class MainWindow(QtWidgets.QMainWindow):
             name = u.get("name", "Unknown")
             if name == self.settings.get("display_name", ""):
                 name += " (you)"
+            print(u)
+            # Status indicator: tx 🟢 (talking), 🔴 muted, default
+            mic_icon = "💬" if u.get("tx") else "🔇" if u.get("muted") else " "
+            spk_icon = "🔇" if u.get("spk_muted") else "🔊"
 
-            # Status indicator: tx 🟢 (talking), muted, default
-            status_icon = "💬" if u.get("tx") else "🔴" if u.get("muted") else " "
-
-            item = QtWidgets.QTreeWidgetItem([status_icon, name, u.get("ip", "")])
+            item = QtWidgets.QTreeWidgetItem([spk_icon, mic_icon, name, u.get("ip", "")])
             self.users.addTopLevelItem(item)
 
     def add_chat(self, msg: dict):
@@ -402,7 +407,7 @@ class MainWindow(QtWidgets.QMainWindow):
         try:
             if msg.get("type") == "chat":
                 # Safe handling of expected chat messages
-                print(msg)
+                logging.debug(msg)
                 self.chat_view.append(
                     f"<b>{msg.get('display_name', 'Unknown')}</b>: {msg.get('text', '')}"
                 )
@@ -444,28 +449,47 @@ class MainWindow(QtWidgets.QMainWindow):
         payload = {"display_name": self.settings.get("display_name", "Unknown"), "type": "chat", "text": text[:512]}  # Limit length
 
         # Echo locally
-        self.add_chat({"type": "chat", "name": self.settings.get("display_name", "Unknown"), "text": text})
+        self.add_chat({"type": "chat", "display_name": self.settings.get("display_name", "Unknown"), "text": text})
 
         # Queue message to network thread
         if self.net:
             self.net.queue_message(payload)
 
         self.chat_edit.clear()
+        
+    # ── send Status Update ─────────────────────────────────────────────────────
+    def send_status_update(self):
+        
+        RATE_LIMIT_MS = 250  # 4 messages per second
+        now = QtCore.QTime.currentTime().msecsSinceStartOfDay()
+        if now - self._last_sent_msecs < RATE_LIMIT_MS:
+            return
+        self._last_sent_msecs = now
+
+        payload = {"type": "status", "spk_muted": self.spk_muted, "muted": self.mic_muted, "display_name": self.settings.get("display_name")}
+        logging.debug(payload)
+        # Queue message to network thread
+        if self.net:
+            self.net.queue_message(payload)
 
     # ── Audio mute toggles and UI updates ──────────────────────────────
     def _toggle_mic_mute(self):
         self.mic_muted = not self.mic_muted
         self.audio_engine.set_mic_muted(self.mic_muted)
         self._update_mute_buttons()
+        self.send_status_update()
 
     def _toggle_spk_mute(self):
         self.spk_muted = not self.spk_muted
         self.audio_engine.set_spk_muted(self.spk_muted)
         self._update_mute_buttons()
+        self.send_status_update()
+
 
     def _update_mute_buttons(self):
         self.mute_mic_btn.setText("🔇 Mic" if self.mic_muted else "🎤 Mic")
         self.mute_spk_btn.setText("🔇 Audio" if self.spk_muted else "🔉 Audio")
+        self.send_status_update()
 
     # ── Settings save methods for audio controls ─────────────────────────
     def save_mic_vol(self, value):

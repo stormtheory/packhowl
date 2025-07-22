@@ -121,8 +121,9 @@ class NetworkThread(QtCore.QThread):
         hello = {
                 "type": "init",
                 "name": self.settings["display_name"],
-                "ip": get_local_ip()
-
+                "ip": get_local_ip(),
+                "spk_muted": "False",    # Default
+                "muted": "True"    # Default
             }
 
         writer.write((json.dumps(hello) + "\n").encode())
@@ -147,6 +148,8 @@ class NetworkThread(QtCore.QThread):
             # Handle other known message types
             match msg_type:
                 case "userlist":
+                    self.userlist.emit(msg["users"])
+                case "status":
                     self.userlist.emit(msg["users"])
                 case "chat":
                     self.chatmsg.emit(msg)

@@ -50,6 +50,7 @@ class ClientInfo:
     # ── NEW: voice / mute bookkeeping ────────────────────────────────────────
     tx: bool = False             # True while client is actively sending audio
     muted: bool = False          # True if client set mic mute
+    spk_muted: bool = False
     last_audio: float = 0.0      # Timestamp of last audio frame received
 
 ###############################################################################
@@ -140,9 +141,16 @@ class Server:
                         # Update client info
                         self.clients[cn].cn = msg.get("name", cn)
                         self.clients[cn].ip = msg.get("ip", peername)
-                        self.clients[cn].muted = msg.get("muted", False)  # ── NEW
+                        self.clients[cn].muted = msg.get("muted", False)
+                        self.clients[cn].spk_muted = msg.get("spk_muted", False)
                         await self.broadcast_user_list()
                         continue  # don't forward 'init' to others
+                    
+                    elif msg.get("type") == "status":
+                        self.clients[cn].spk_muted = bool(msg.get("spk_muted", False))
+                        self.clients[cn].muted = bool(msg.get("muted", False))
+                        await self.broadcast_user_list()                # push TX status
+                        #await self.broadcast(msg, exclude=cn)           # relay frame
 
                     # Handle Opus audio frame forwarding
                     elif msg.get("type") == "audio":
@@ -202,7 +210,8 @@ class Server:
                 "name":  client.cn,
                 "ip":    client.ip,
                 "tx":    client.tx,     # ── NEW: actively transmitting flag
-                "muted": client.muted   # ── NEW: mic muted flag
+                "muted": client.muted,   # ── NEW: mic muted flag
+                "spk_muted": client.spk_muted
             })
 
         message = json.dumps({
