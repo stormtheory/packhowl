@@ -192,8 +192,8 @@ def main():
     # Assign the status callback after window is created
     audio_engine.status_callback = window.show_status
 
-    # PTT Key filter    
-    window.install_ptt_key_filter()
+    # PTT Key filter
+    #window.install_ptt_key_filter()  # Moved to a global call
 
     window.show()
 
@@ -202,6 +202,7 @@ def main():
 
     # On app exit, ensure proper cleanup
     window.cleanup()
+    audio_engine.stop()
     net_thread.stop()
     net_thread.wait()
 

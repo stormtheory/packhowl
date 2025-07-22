@@ -11,11 +11,13 @@ from PySide6 import QtWidgets, QtGui, QtCore
 from PySide6.QtCore import Qt
 import sounddevice as sd
 import logging
+from pynput import keyboard
 
 from config import (APP_NAME, APP_ICON_PATH, CLIENT_IP, SSL_CA_PATH, CERTS_DIR,
                     DATA_DIR, ensure_data_dirs)
 from config import SERVER_PORT as DEFAULT_SERVER_PORT
 
+logging.basicConfig(level=logging.DEBUG, format='%(levelname)s: %(message)s')
 
 class MainWindow(QtWidgets.QMainWindow):
     RATE_LIMIT_MS = 1000  # 1 message per second rate limit
@@ -30,7 +32,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.audio_engine.inputLevel.connect(self.update_mic_level)
             self.audio_engine.outputLevel.connect(self.update_spk_level)
 
-
+        self.start_global_ptt_listener()
 
         # Create a central widget container for QMainWindow
         central_widget = QtWidgets.QWidget()
@@ -54,7 +56,11 @@ class MainWindow(QtWidgets.QMainWindow):
         left_layout = QtWidgets.QVBoxLayout()
         self.server_lbl = QtWidgets.QLabel()
         self.users = QtWidgets.QTreeWidget()
-        self.users.setHeaderLabels(["🟢", "Name", "IP"])
+        self.users.setHeaderLabels(["SPK", "MIC", "Name", "IP"])
+        self.users.setColumnWidth(0, 50)   # SPK
+        self.users.setColumnWidth(1, 50)   # MIC
+        self.users.setColumnWidth(2, 120)  # Name
+        self.users.setColumnWidth(3, 100)  # IP
         self.status = QtWidgets.QListWidget()
         left_layout.addWidget(self.server_lbl)
         left_layout.addWidget(self.users, 3)
@@ -84,7 +90,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.mic_slider.setRange(0, 100)
         self.mic_slider.setValue(100)
         self.input_device = QtWidgets.QComboBox()
-        self.ptt_checkbox = QtWidgets.QCheckBox("Push to Talk")
+        self.audio_mode_combo = QtWidgets.QComboBox()
+        self.audio_mode_combo.addItems(["Open Mic", "Push to Talk", "Voice Activated"])
+
 
         # Speaker controls (buttons + slider + combo + check)
         self.mute_spk_btn = QtWidgets.QPushButton("Mute Audio")
@@ -92,19 +100,18 @@ class MainWindow(QtWidgets.QMainWindow):
         self.spk_slider.setRange(0, 100)
         self.spk_slider.setValue(100)
         self.output_device = QtWidgets.QComboBox()
-        self.vox_checkbox = QtWidgets.QCheckBox("Voice Activated")
 
         # ── Layout top row: Mic controls ─────────────────────────────
         audio_layout.addWidget(self.mute_mic_btn, 0, 0)
         audio_layout.addWidget(self.mic_slider, 0, 1)
         audio_layout.addWidget(self.input_device, 0, 2)
-        audio_layout.addWidget(self.ptt_checkbox, 0, 3)
+        audio_layout.addWidget(self.audio_mode_combo, 0, 3)
+
 
         # ── Layout second row: Speaker controls ──────────────────────
         audio_layout.addWidget(self.mute_spk_btn, 1, 0)
         audio_layout.addWidget(self.spk_slider, 1, 1)
         audio_layout.addWidget(self.output_device, 1, 2)
-        audio_layout.addWidget(self.vox_checkbox, 1, 3)
         
         # ── Layout third row: Mic & Speaker level bars ───────────────
         self.mic_level_bar = QtWidgets.QProgressBar()
@@ -128,9 +135,9 @@ class MainWindow(QtWidgets.QMainWindow):
         audio_layout.addWidget(self.mic_gain_slider, 2, 1, 1, 3)
 
         # Level‑meter row (row 3) – updated index
-        audio_layout.addWidget(QtWidgets.QLabel("Mic Level"),     3, 0)
+        audio_layout.addWidget(QtWidgets.QLabel("Mic Level", alignment=Qt.AlignRight),     3, 0)
         audio_layout.addWidget(self.mic_level_bar,                3, 1)
-        audio_layout.addWidget(QtWidgets.QLabel("Speaker Level"), 3, 2)
+        audio_layout.addWidget(QtWidgets.QLabel("Speaker Level", alignment=Qt.AlignRight), 3, 2)
         audio_layout.addWidget(self.spk_level_bar,                3, 3)
 
 
@@ -164,7 +171,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.net.chatmsg.connect(self._handle_incoming_msg)
 
         # ── Restore mute states and connect buttons ─────────────────
-        self.mic_muted = False
+        self.mic_muted = True
         self.spk_muted = False
         self._update_mute_buttons()
 
@@ -185,9 +192,14 @@ class MainWindow(QtWidgets.QMainWindow):
         # Restore saved audio-related settings or set defaults
         self.mic_slider.setValue(self.settings.get("mic_vol", 100))
         self.spk_slider.setValue(self.settings.get("spk_vol", 100))
-        self.ptt_checkbox.setChecked(self.settings.get("ptt", False))
-        self.vox_checkbox.setChecked(self.settings.get("vox", False))
-
+        
+        # Audio Mode loader
+        saved_audio_mode = self.settings.get("audio_mode", "Push to Talk")
+        index = self.audio_mode_combo.findText(saved_audio_mode)
+        self.audio_engine.set_audio_mode(saved_audio_mode)
+        if index != -1:
+            self.audio_mode_combo.setCurrentIndex(index)
+            
         # Restore saved input device selection, fallback gracefully
         saved_input = self.settings.get("input_device", None)
         if saved_input:
@@ -205,8 +217,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # Connect signals to save changes immediately
         self.mic_slider.valueChanged.connect(self.save_mic_vol)
         self.spk_slider.valueChanged.connect(self.save_spk_vol)
-        self.ptt_checkbox.toggled.connect(self._ptt_toggled)
-        self.vox_checkbox.toggled.connect(self._vox_toggled)
+        self.audio_mode_combo.currentTextChanged.connect(self._audio_mode_changed)
         self.input_device.currentIndexChanged.connect(self.save_input_device)
         self.output_device.currentIndexChanged.connect(self.save_output_device)
 
@@ -214,9 +225,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     # ── PTT ──────────────────────────────────────────────────
     def install_ptt_key_filter(self):
-        # Map key string from settings to Qt key
-        ptt_key_str = self.settings.get("ptt_key", "LeftAlt") # LeftAlt is the fallback
-        # Mapping dictionary, add more keys as needed
+        ptt_key_str = self.settings.get("ptt_key", "LeftAlt")
         key_map = {
             "LeftAlt": Qt.Key_Alt,
             "RightAlt": Qt.Key_Alt,
@@ -225,28 +234,105 @@ class MainWindow(QtWidgets.QMainWindow):
             "LeftCtrl": Qt.Key_Control,
             "RightCtrl": Qt.Key_Control,
             "Space": Qt.Key_Space,
-            # Add other keys if needed
         }
-        self.ptt_key = key_map.get(ptt_key_str, Qt.Key_Alt)  # Default to LeftAlt
-
-        self.ptt_pressed = False  # Track key state
-
-        # Install event filter on main window for key press/release
+        self.ptt_key = key_map.get(ptt_key_str, Qt.Key_Alt)
+        self.ptt_pressed = False
         self.installEventFilter(self)
+        
+    def start_global_ptt_listener(self):
+        """
+        Starts a daemon thread that listens for the configured PTT key
+        even when the application is not focused.
+        """
+        # ------------------------------------------------------------------
+        # 1. Resolve the key the user chose in settings
+        # ------------------------------------------------------------------
+        ptt_key_name = self.settings.get("ptt_key", "leftalt")   # e.g. "LeftAlt"
+        ptt_name_lc  = ptt_key_name.lower()
+
+        # map settings‑string → list of pynput Key objects (for non‑character keys)
+        special_map = {
+            "leftalt":   [keyboard.Key.alt_l],
+            "rightalt":  [keyboard.Key.alt_r],
+            "alt":       [keyboard.Key.alt, keyboard.Key.alt_l, keyboard.Key.alt_r],
+            "leftctrl":  [keyboard.Key.ctrl_l],
+            "rightctrl": [keyboard.Key.ctrl_r],
+            "ctrl":      [keyboard.Key.ctrl, keyboard.Key.ctrl_l, keyboard.Key.ctrl_r],
+            "leftshift": [keyboard.Key.shift_l],
+            "rightshift":[keyboard.Key.shift_r],
+            "shift":     [keyboard.Key.shift, keyboard.Key.shift_l, keyboard.Key.shift_r],
+            "space":     [keyboard.Key.space],
+            "f1":        [keyboard.Key.f1],
+            "f2":        [keyboard.Key.f2],
+            # … add more if you need them
+        }
+
+        # Character key?  (letters, numbers, etc.)
+        if ptt_name_lc not in special_map:
+            self._ptt_is_special   = False
+            self._ptt_char_expected = ptt_name_lc  # single lowercase char
+            self._ptt_special_keys  = []
+        else:
+            self._ptt_is_special   = True
+            self._ptt_char_expected = None
+            self._ptt_special_keys  = special_map[ptt_name_lc]
+
+        # ------------------------------------------------------------------
+        # 2. Helper to decide if the incoming pynput key matches PTT
+        # ------------------------------------------------------------------
+        def _matches_ptt(key) -> bool:
+            if self._ptt_is_special:
+                return key in self._ptt_special_keys
+            # character key
+            try:
+                return key.char and key.char.lower() == self._ptt_char_expected
+            except AttributeError:
+                return False    # key.char doesn't exist on special keys
+
+        # ------------------------------------------------------------------
+        # 3. Handlers
+        # ------------------------------------------------------------------
+        def on_press(key):
+            if _matches_ptt(key) and not self.ptt_pressed:
+                self.ptt_pressed = True
+                self.audio_engine.set_ptt_pressed(True)
+                logging.debug("[GlobalPTT] key pressed")
+
+        def on_release(key):
+            if _matches_ptt(key) and self.ptt_pressed:
+                self.ptt_pressed = False
+                self.audio_engine.set_ptt_pressed(False)
+                logging.debug("[GlobalPTT] key released")
+
+        # ------------------------------------------------------------------
+        # 4. Start the daemon listener
+        # ------------------------------------------------------------------
+        self.global_ptt_listener = keyboard.Listener(
+            on_press=on_press,
+            on_release=on_release,
+            suppress=False,      # do NOT block the key for other apps
+        )
+        self.global_ptt_listener.daemon = True
+        self.global_ptt_listener.start()
+        logging.info("[GlobalPTT] listener started")
 
     def eventFilter(self, obj, event):
         if event.type() == QtCore.QEvent.KeyPress:
-            if event.key() == self.ptt_key:
+            if event.key() == self.ptt_key and not self.ptt_pressed:
                 self.ptt_pressed = True
-                # Tell audio engine that PTT key is pressed
                 if self.audio_engine:
                     self.audio_engine.set_ptt_pressed(True)
+                logging.debug(f"[GUI] PTT key pressed: {event.key()}")
+                return True  # Stop further handling
         elif event.type() == QtCore.QEvent.KeyRelease:
-            if event.key() == self.ptt_key:
+            if event.key() == self.ptt_key and self.ptt_pressed:
                 self.ptt_pressed = False
                 if self.audio_engine:
-                        self.audio_engine.set_ptt_pressed(False)
+                    self.audio_engine.set_ptt_pressed(False)
+                logging.debug(f"[GUI] PTT key released: {event.key()}")
+                return True  # Stop further handling
         return super().eventFilter(obj, event)
+
 
 
     # ── UI updates ───────────────────────────────────────────────────────
@@ -290,6 +376,13 @@ class MainWindow(QtWidgets.QMainWindow):
             timeout (int): Duration in ms. 0 = permanent.
         """
         self.status_bar.showMessage(message, timeout)
+        
+    def _audio_mode_changed(self, mode: str):
+        self.settings["audio_mode"] = mode
+        self.settings.save()
+        if self.audio_engine:
+            self.audio_engine.set_audio_mode(mode)
+
 
     def add_status(self, line: str):
         self.status.addItem(line)
@@ -301,11 +394,12 @@ class MainWindow(QtWidgets.QMainWindow):
             name = u.get("name", "Unknown")
             if name == self.settings.get("display_name", ""):
                 name += " (you)"
+            print(u)
+            # Status indicator: tx 🟢 (talking), 🔴 muted, default
+            mic_icon = "💬" if u.get("tx") else "🔇" if u.get("muted") else " "
+            spk_icon = "🔇" if u.get("spk_muted") else "🔊"
 
-            # Status indicator: tx (talking), muted, default
-            status_icon = "🟢" if u.get("tx") else "🔴" if u.get("muted") else " "
-
-            item = QtWidgets.QTreeWidgetItem([status_icon, name, u.get("ip", "")])
+            item = QtWidgets.QTreeWidgetItem([spk_icon, mic_icon, name, u.get("ip", "")])
             self.users.addTopLevelItem(item)
 
     def add_chat(self, msg: dict):
@@ -313,8 +407,9 @@ class MainWindow(QtWidgets.QMainWindow):
         try:
             if msg.get("type") == "chat":
                 # Safe handling of expected chat messages
+                logging.debug(msg)
                 self.chat_view.append(
-                    f"<b>{msg.get('name', 'Unknown')}</b>: {msg.get('text', '')}"
+                    f"<b>{msg.get('display_name', 'Unknown')}</b>: {msg.get('text', '')}"
                 )
             else:
                 # Unexpected message type — log it for debugging
@@ -351,31 +446,50 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         self._last_sent_msecs = now
 
-        payload = {"type": "chat", "text": text[:512]}  # Limit length
+        payload = {"display_name": self.settings.get("display_name", "Unknown"), "type": "chat", "text": text[:512]}  # Limit length
 
         # Echo locally
-        self.add_chat({"type": "chat", "name": self.settings.get("display_name", "Unknown"), "text": text})
+        self.add_chat({"type": "chat", "display_name": self.settings.get("display_name", "Unknown"), "text": text})
 
         # Queue message to network thread
         if self.net:
             self.net.queue_message(payload)
 
         self.chat_edit.clear()
+        
+    # ── send Status Update ─────────────────────────────────────────────────────
+    def send_status_update(self):
+        
+        RATE_LIMIT_MS = 250  # 4 messages per second
+        now = QtCore.QTime.currentTime().msecsSinceStartOfDay()
+        if now - self._last_sent_msecs < RATE_LIMIT_MS:
+            return
+        self._last_sent_msecs = now
+
+        payload = {"type": "status", "spk_muted": self.spk_muted, "muted": self.mic_muted, "display_name": self.settings.get("display_name")}
+        logging.debug(payload)
+        # Queue message to network thread
+        if self.net:
+            self.net.queue_message(payload)
 
     # ── Audio mute toggles and UI updates ──────────────────────────────
     def _toggle_mic_mute(self):
         self.mic_muted = not self.mic_muted
         self.audio_engine.set_mic_muted(self.mic_muted)
         self._update_mute_buttons()
+        self.send_status_update()
 
     def _toggle_spk_mute(self):
         self.spk_muted = not self.spk_muted
         self.audio_engine.set_spk_muted(self.spk_muted)
         self._update_mute_buttons()
+        self.send_status_update()
+
 
     def _update_mute_buttons(self):
-        self.mute_mic_btn.setText("Unmute Mic" if self.mic_muted else "Mute Mic")
-        self.mute_spk_btn.setText("Unmute Audio" if self.spk_muted else "Mute Audio")
+        self.mute_mic_btn.setText("🔇 Mic" if self.mic_muted else "🎤 Mic")
+        self.mute_spk_btn.setText("🔇 Audio" if self.spk_muted else "🔉 Audio")
+        self.send_status_update()
 
     # ── Settings save methods for audio controls ─────────────────────────
     def save_mic_vol(self, value):
@@ -388,12 +502,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _ptt_toggled(self, checked):
         self.settings["ptt"] = checked
-        self.settings.save()
+        #self.settings.save()
         self.audio_engine.set_ptt_enabled(checked)
 
     def _vox_toggled(self, checked):
         self.settings["vox"] = checked
-        self.settings.save()
+        #self.settings.save()
         self.audio_engine.set_vox_enabled(checked)
 
     def save_input_device(self, index):
@@ -421,6 +535,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
     # Ensure graceful cleanup on app exit
     def cleanup(self):
+        if hasattr(self, "global_ptt_listener"):
+            self.global_ptt_listener.stop()
+        if getattr(self, "global_ptt_listener", None):
+            self.global_ptt_listener.stop()
         self.audio_engine.stop()
         self.net.stop()
         self.net.wait()
+

@@ -93,7 +93,16 @@ class NetworkThread(QtCore.QThread):
     async def _connect_and_loop(self):
         ip = self.settings["server_ip"]
         self.status.emit(f"[INFO] connecting to {ip}:{SERVER_PORT}")
-
+        
+        def get_local_ip():
+            try:
+                # This doesn't send any traffic, it just selects the appropriate local IP
+                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                    s.connect(('1.1.1.1', SERVER_PORT))  # Use a public DNS for reference
+                    return s.getsockname()[0]
+            except Exception:
+                return "127.0.0.1"  # fallback
+        
         # Build TLS context (client side, mutual auth)
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
         ctx.options |= ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1 | ssl.OP_NO_TLSv1_2  # TLS 1.3 only
@@ -112,7 +121,9 @@ class NetworkThread(QtCore.QThread):
         hello = {
                 "type": "init",
                 "name": self.settings["display_name"],
-                "ip": socket.gethostbyname(socket.gethostname())  # add IP if needed
+                "ip": get_local_ip(),
+                "spk_muted": "False",    # Default
+                "muted": "True"    # Default
             }
 
         writer.write((json.dumps(hello) + "\n").encode())
@@ -137,6 +148,8 @@ class NetworkThread(QtCore.QThread):
             # Handle other known message types
             match msg_type:
                 case "userlist":
+                    self.userlist.emit(msg["users"])
+                case "status":
                     self.userlist.emit(msg["users"])
                 case "chat":
                     self.chatmsg.emit(msg)

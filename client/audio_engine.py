@@ -11,6 +11,7 @@ import logging
 import time
 from PySide6.QtCore import QMetaObject, Qt, Slot  # near other QtCore imports
 from PySide6 import QtCore  # Added for Qt signal support
+
 logging.basicConfig(level=logging.DEBUG, format='%(levelname)s: %(message)s')
 
 ###############################################################################
@@ -70,8 +71,8 @@ class AudioEngine(QtCore.QObject):
         self.mic_paused = False 
         self.spk_muted = False
         self.ptt_pressed = False  # Track PTT state from GUI
-        self.ptt_enabled = self.settings.get("ptt", False)
-        self.vox_enabled = self.settings.get("vox", False)
+        #self.ptt_enabled = self.settings.get("ptt", False)
+        #self.vox_enabled = self.settings.get("vox", False)
 
         # Audio stream objects for input/output, initialized in start()
         self.stream_in = None
@@ -123,155 +124,206 @@ class AudioEngine(QtCore.QObject):
 
     # ── Helper: find a device index by name or fall back to system default ──
     def _find_device_index(self, name, *, is_input):
+        devices = sd.query_devices()
+        logging.debug("[Audio] Available devices:")
+        for idx, dev in enumerate(devices):
+            logging.debug(f"  {idx}: {dev['name']} | Input: {dev['max_input_channels']} | Output: {dev['max_output_channels']}")
+
         if not name:
+            logging.debug("[Audio] No device name specified, using default.")
             return None
-        for idx, dev in enumerate(sd.query_devices()):
+
+        for idx, dev in enumerate(devices):
             if dev['name'] == name and (
-                (is_input  and dev['max_input_channels']  > 0) or
+                (is_input and dev['max_input_channels'] > 0) or
                 (not is_input and dev['max_output_channels'] > 0)
             ):
-                logging.debug(f"Found device '{name}' as index {idx}")
+                logging.debug(f"[Audio] Matched requested device '{name}' at index {idx}")
                 return idx
-        logging.warning(f"Device '{name}' not found. Falling back to default.")
+
+        logging.warning(f"[Audio] Requested device '{name}' not found. Falling back to default.")
         return None
+
 
 
     # ── Start the audio subsystem: open streams & launch worker thread ──────
     def start(self):
         logging.debug("[Audio] Entering start()")
-        if self.stream_in or self.stream_out:
-            logging.debug("[Audio] Restart requested — stopping old streams")
-            self.stop()
-            time.sleep(0.2)  # allow OS to release device
-       
-        """
-        Opens input/output streams at the closest-supported device rate.
-        Resamples to 48 kHz for Opus if the device can’t do 48 kHz natively.
-        """
-        # ── Pick devices from saved settings (or defaults) ──────────────────
-        in_name  = self.settings.get("input_device",  None)
-        out_name = self.settings.get("output_device", None)
-        in_idx   = self._find_device_index(in_name,  is_input=True)
-        out_idx  = self._find_device_index(out_name, is_input=False)
-        
-        logging.debug(f"[Audio] Input stream device index: {in_idx}")
-        logging.debug(f"[Audio] Output stream device index: {out_idx}")
-        
-        # ── Validate actual working samplerates ─────────────────────────────
         try:
+            if self.stream_in or self.stream_out:
+                logging.debug("[Audio] Restart requested — stopping old streams")
+                self.stop()
+                # Wait for audio thread to finish cleanly
+                if self.audio_thread and self.audio_thread.is_alive():
+                    logging.debug("[Audio] Waiting for audio thread to finish")
+                    self.audio_thread.join(timeout=2.0)
+                    if self.audio_thread.is_alive():
+                        logging.warning("[Audio] Audio thread did not finish in time")
+
+            # Pick devices from saved settings (or defaults)
+            in_name = self.settings.get("input_device", None)
+            out_name = self.settings.get("output_device", None)
+            in_idx = self._find_device_index(in_name, is_input=True)
+            out_idx = self._find_device_index(out_name, is_input=False)
+
+            logging.debug(f"[Audio] Input stream device index: {in_idx}")
+            logging.debug(f"[Audio] Output stream device index: {out_idx}")
+
+            # Validate actual working samplerates
             self.dev_in_rate = self._find_compatible_samplerate(in_idx, is_input=True)
             sd.check_input_settings(device=in_idx, channels=self.CHANNELS,
                                     samplerate=self.dev_in_rate, dtype='int16')
-        except Exception as e:
-            raise RuntimeError(f"[Audio][ERR] Could not configure input device: {e}")
 
-        try:
             self.dev_out_rate = self._find_compatible_samplerate(out_idx, is_input=False)
             sd.check_output_settings(device=out_idx, channels=self.CHANNELS,
                                     samplerate=self.dev_out_rate, dtype='int16')
+
+            logging.debug(f"[Audio] Using input rate {self.dev_in_rate} Hz, output rate {self.dev_out_rate} Hz")
+            self._status(f"[Audio] Using input rate {self.dev_in_rate} Hz, output rate {self.dev_out_rate} Hz")
+
+            self.resample_input = (self.dev_in_rate != 48000)
+
+            # Re-create Opus codec
+            self.encoder = opuslib.Encoder(48000, self.CHANNELS, opuslib.APPLICATION_VOIP)
+            self.decoder = opuslib.Decoder(48000, self.CHANNELS)
+
+            self.dev_in_frames = int(self.dev_in_rate * self.FRAME_DURATION_MS / 1000)
+            self.opus_frames = int(48000 * self.FRAME_DURATION_MS / 1000)
+
+            self.stream_in = sd.InputStream(
+                samplerate=self.dev_in_rate,
+                blocksize=self.dev_in_frames,
+                channels=self.CHANNELS,
+                dtype='int16',
+                device=in_idx,
+                callback=self._input_callback,
+                latency='low'
+            )
+            self.stream_out = sd.OutputStream(
+                samplerate=48000,
+                blocksize=self.opus_frames,
+                channels=self.CHANNELS,
+                dtype='int16',
+                device=out_idx,
+                callback=self._output_callback,
+                latency='low'
+            )
+
+            self.stream_in.start()
+            logging.debug("[Audio] stream_in started")
+            self.stream_out.start()
+            logging.debug("[Audio] stream_out started")
+
+            self.running = True
+            self.audio_thread = threading.Thread(target=self._audio_io_loop, daemon=True)
+            self.audio_thread.start()
+            logging.debug("[Audio] audio_thread started")
+
+            self._status("[Audio] Streams started successfully")
+
         except Exception as e:
-            raise RuntimeError(f"[Audio][ERR] Could not configure output device: {e}")
-
-        logging.debug(f"[Audio] Using input rate {self.dev_in_rate} Hz, output rate {self.dev_out_rate} Hz")
-        self._status(f"[Audio] Using input rate {self.dev_in_rate} Hz, output rate {self.dev_out_rate} Hz")
-        self._status("[Audio] Streams started successfully")
-
-
-        # Flag if we must resample mic frames → 48 kHz for Opus
-        self.resample_input = (self.dev_in_rate != 48000)
-
-        # ── (Re-)create Opus codec (always 48 kHz mono) ─────────────────────
-        self.encoder = opuslib.Encoder(48000, self.CHANNELS, opuslib.APPLICATION_VOIP)
-        self.decoder = opuslib.Decoder(48000, self.CHANNELS)
-
-        # ── Compute frame sizes for each rate (20 ms default frame) ─────────
-        self.dev_in_frames  = int(self.dev_in_rate  * self.FRAME_DURATION_MS / 1000)
-        self.opus_frames    = int(48000            * self.FRAME_DURATION_MS / 1000)
-
-        # ── Build PortAudio streams ─────────────────────────────────────────
-        self.stream_in = sd.InputStream(
-            samplerate=self.dev_in_rate,
-            blocksize=self.dev_in_frames,
-            channels=self.CHANNELS,
-            dtype='int16',
-            device=in_idx,
-            callback=self._input_callback,
-            latency='low'
-        )
-        self.stream_out = sd.OutputStream(
-            samplerate=48000,                    # always feed 48 kHz into speaker path
-            blocksize=self.opus_frames,
-            channels=self.CHANNELS,
-            dtype='int16',
-            device=out_idx,
-            callback=self._output_callback,
-            latency='low'
-        )
-
-        # ── Kick everything off ─────────────────────────────────────────────
-        logging.debug("[Audio] Starting stream_in")
-        self.stream_in.start()
-        logging.debug("[Audio] Starting stream_out")
-        self.stream_out.start()
-        self.running = True
-        print("[Audio] Streams started successfully")
-
-        # Worker thread keeps any asyncio queues alive for playback
-        self.audio_thread = threading.Thread(target=self._audio_io_loop, daemon=True)
-        self.audio_thread.start()
+            logging.error(f"[Audio][ERR] Failed to start audio streams: {e}")
+            self._status(f"[Audio][ERR] Failed to start audio streams: {e}")
+            self.running = False
 
     def stop(self):
-        """
-        Stop audio processing and close streams.
-        """
+        logging.debug("[Audio] Stopping audio streams")
         self.running = False
-        if self.stream_in:
-            self.stream_in.stop()
-            self.stream_in.close()
-            self.stream_in = None
-        if self.stream_out:
-            self.stream_out.stop()
-            self.stream_out.close()
-            self.stream_out = None
+        try:
+            if self.stream_in:
+                self.stream_in.stop()
+                self.stream_in.close()
+                self.stream_in = None
+                logging.debug("[Audio] stream_in stopped and closed")
+            if self.stream_out:
+                self.stream_out.stop()
+                self.stream_out.close()
+                self.stream_out = None
+                logging.debug("[Audio] stream_out stopped and closed")
+        except Exception as e:
+            logging.error(f"[Audio][ERR] Error stopping streams: {e}")
+
+        if self.audio_thread and self.audio_thread.is_alive():
+            logging.debug("[Audio] Waiting for audio thread to finish on stop")
+            self.audio_thread.join(timeout=2.0)
+            if self.audio_thread.is_alive():
+                logging.warning("[Audio] Audio thread did not finish in time after stop")
+            else:
+                logging.debug("[Audio] Audio thread finished cleanly after stop")
 
     # ── Mic capture callback: encode + send ────────────────────────────────
     def _input_callback(self, indata, frames, time_info, status):
-        """
-        Called by sounddevice every `dev_in_frames` samples. Handles VOX/PTT,
-        optional resampling to 48 kHz, then Opus-encodes and enqueues JSON.
-        """
-        logging.debug("[Audio] _input_callback triggered")
         if self.mic_muted:
-            return  # Hard-mute
+            #logging.debug("[Audio][_input_callback] Mic muted, skipping frame")
+            return
+
+        if status:
+            logging.warning(f"[Audio][_input_callback] Input stream status: {status}")
 
         try:
-            pcm = indata[:, 0].copy()  # mono → flat int16 ndarray
-
-            # ── Compute RMS for input level meter ────────────────────────
+            pcm = indata[:, 0].copy()
             rms = np.sqrt(np.mean(pcm.astype(np.float32) ** 2))
-            self.inputLevel.emit(rms / 32768.0) # Emit signal for GUI mic level
-
-            # ── Basic VOX (voice detection) ──────────────────────────────
-            if self.vox_enabled:
-                new_vox = bool(rms >= self.vox_threshold)  # Cast to native bool
+            
+            #logging.debug(f"[Audio][Mic Mode Check] 1")
+            if self.ptt_enabled:
+                #logging.debug(f"[Audio][PTT Check] Enabled 1")
+                if not self.ptt_pressed:
+                    #logging.debug("[Audio][_input_callback] PTT enabled but not pressed, skipping frame 1")
+                    return
+            elif self.vox_enabled:
+                #logging.debug(f"[Audio][VOX] Enabled 1")
+                new_vox = bool(rms >= self.vox_threshold)
                 if new_vox != self.vox_active:
                     self.vox_active = new_vox
-                    self.voxActivity.emit(self.vox_active)
+                    self.voxActivity.emit(new_vox)
                 if not new_vox:
-                    return  # below threshold, skip frame
+                    #logging.debug("[Audio][_input_callback] VOX enabled but no voice detected, skipping frame")
+                    return  # Skip sending audio because VOX inactive
+            else:
+                logging.debug(f"[Audio][OPEN MIC] 1")
+                # Open Mic mode — always send audio, reset VOX state if needed
+                if self.vox_active:
+                    self.vox_active = False
+                    self.voxActivity.emit(False)
+
+            ## After PTT/Active So Mic level won't go up
+            self.inputLevel.emit(rms / 32768.0)
+
+            # Check PTT
+            if self.ptt_enabled:
+                logging.debug(f"[Audio][PTT Check] Enabled 2")
+                if not self.ptt_pressed:
+                    logging.debug("[Audio][_input_callback] PTT enabled but not pressed, skipping frame 2")
+                    return
+
+            if self.resample_input:
+                resampled = samplerate.resample(pcm, 48000 / self.dev_in_rate, 'sinc_fastest')
+                gain = self.settings.get("mic_gain", 2.0)
+                boosted = (resampled * gain).clip(-32768, 32767)
+                pcm_int16 = boosted.astype(np.int16)
+            else:
+                gain = self.settings.get("mic_gain", 2.0)
+                boosted = (pcm.astype(np.float32) * gain).clip(-32768, 32767)
+                pcm_int16 = boosted.astype(np.int16)
+
+            opus_bytes = self.encoder.encode(pcm_int16.tobytes(), int(self.opus_frames))
+            self.net_thread.queue_message({
+                "type": "audio",
+                "data": opus_bytes.hex()
+            })
+            logging.debug(f"[Audio][_input_callback] Queued audio packet: {len(opus_bytes)} bytes")
+
+            if self.loopback_enabled:
+                try:
+                    self.incoming_audio_queue.put_nowait(opus_bytes.hex())
+                except asyncio.QueueFull:
+                    logging.warning("[Audio][_input_callback] Loopback audio queue full, dropping packet")
+
+        except Exception as e:
+            logging.error(f"[Audio][_input_callback] Error: {e}")
 
 
-            # ── Push-to-Talk gate (stub: always allowed unless you implement key state) ──
-            def _is_ptt_pressed(self):
-                """
-                Return whether Push-To-Talk key is pressed.
-                Now returns the flag updated from GUI key event filter.
-                """
-                return self.ptt_enabled and self.ptt_pressed
-            
-            def set_ptt_pressed(self, pressed: bool):
-                with self.lock:
-                    self.ptt_pressed = pressed
+
 
             # ── Resample if device ≠ 48 kHz ───────────────────────────────
             if self.resample_input:
@@ -306,36 +358,31 @@ class AudioEngine(QtCore.QObject):
             print(f"[Audio][ERR] Input callback error: {e}")
 
     def _output_callback(self, outdata, frames, time_info, status):
+        if self.spk_muted:
+            outdata.fill(0)  # mute speaker output
+            return
         if status:
-            logging.warning(f"[Audio] Input stream status: {status}")
+            logging.warning(f"[Audio][OutputCallback] PortAudio status: {status}")
 
-        """
-        Called in sounddevice output thread context when audio playback buffer is needed.
-        Dequeues Opus packets, decodes to PCM, and writes to output buffer.
-        """
-        # Non-blocking read from incoming queue
         try:
             opus_packet = self.incoming_audio_queue.get_nowait()
         except asyncio.QueueEmpty:
-            # No audio packet available, output silence
+            #logging.debug("[Audio][OutputCallback] Output queue empty - filling silence")
             outdata.fill(0)
             return
 
         try:
-            # Decode hex string back to bytes
             opus_bytes = bytes.fromhex(opus_packet)
-            # Decode to PCM int16 bytes
             pcm_bytes = self.decoder.decode(opus_bytes, self.FRAME_SIZE)
-            # Convert PCM bytes to numpy int16 array for playback
             pcm_array = np.frombuffer(pcm_bytes, dtype='int16')
-            # Calculate RMS level normalized between 0-1 (max int16 = 32768)
             rms_out = np.sqrt(np.mean(pcm_array.astype(np.float32) ** 2)) / 32768.0
             self.outputLevel.emit(rms_out)
             outdata[:] = pcm_array.reshape((-1, self.CHANNELS))
-
         except Exception as e:
-            logging.warning(f"Audio decoding error: {e}")
-            outdata.fill(0)  # Output silence on error
+            logging.warning(f"[Audio][OutputCallback] Audio decoding error: {e}")
+            outdata.fill(0)
+
+
 
     @Slot(str)
     def queue_incoming_audio(self, opus_hex):
@@ -348,33 +395,64 @@ class AudioEngine(QtCore.QObject):
         except asyncio.QueueFull:
             pass  # Drop packets if queue is full to maintain low latency
 
+    def watchdog(self):
+        """
+        Periodically logs current VOX/PTT states thread-safely.
+        Call this method regularly (e.g. via a timer or loop).
+        """
+        with self.lock:
+            vox_enabled = self.vox_enabled
+            ptt_enabled = self.ptt_enabled
+            vox_active = self.vox_active
+            mic_muted = self.mic_muted
+            spk_muted = self.spk_muted
+
+        logging.debug(f"[Audio][Watchdog] Thread alive | VOX Enabled={vox_enabled} | VOX Active={vox_active} | PTT Enabled={ptt_enabled} | Mic Muted={mic_muted} | Spk Muted={spk_muted}")
+
     def _audio_io_loop(self):
         """
-        Runs in separate thread to keep asyncio.Queue running properly with sounddevice threads.
-        This thread can be extended to handle other audio processing as needed.
+        Background thread to keep asyncio.Queue alive and monitor audio thread health.
         """
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        while self.running:
-            loop.run_until_complete(asyncio.sleep(0.1))
-        loop.close()
+        ticks = 0
+        try:
+            while self.running:
+                loop.run_until_complete(asyncio.sleep(1.0))
+                ticks += 1
+                if ticks % 5 == 0:
+                    self.watchdog()
+        finally:
+            loop.close()
 
-    def _is_ptt_pressed(self):
+    def set_audio_mode(self, mode: str):
         """
-        Return whether Push-To-Talk key is pressed.
-        This function needs platform-specific implementation or integration with GUI input events.
-        For now, we assume PTT is always pressed if enabled (for demo purposes).
-        """
-        # TODO: integrate with actual PTT key state detection (e.g., via pynput or Qt events)
-        return True if self.ptt_enabled else False
-    
-    def set_ptt_pressed(self, pressed: bool):
-        """
-        Called by GUI to update Push-To-Talk key state in real time.
-        This is required for dynamic PTT gating in the input callback.
+        Set the audio mode: "Open Mic", "Push to Talk", or "Voice Activated".
+        Update internal flags accordingly.
         """
         with self.lock:
-            self.ptt_pressed = pressed
+            if mode == "Open Mic":
+                self.ptt_enabled = False
+                self.vox_enabled = False
+            elif mode == "Push to Talk":
+                self.ptt_enabled = True
+                self.vox_enabled = False
+            elif mode == "Voice Activated":
+                self.ptt_enabled = False
+                self.vox_enabled = True
+            else:
+                # Unknown mode — default to PTT
+                self.ptt_enabled = True
+                self.vox_enabled = False
+        logging.info(f"[AudioEngine] Audio mode set to: {mode}")
+
+
+    def set_ptt_pressed(self, pressed: bool):
+        with self.lock:
+            if self.ptt_pressed != pressed:
+                self.ptt_pressed = pressed
+                logging.debug(f"[AudioEngine] PTT pressed set to: {pressed}")
+
 
     def set_loopback_enabled(self, enabled: bool):
         """
@@ -387,7 +465,14 @@ class AudioEngine(QtCore.QObject):
     def enqueue_audio_threadsafe(self, opus_hex: str):
         self.incomingAudio.emit(opus_hex)
 
-
+    # ── Push-to-Talk gate (stub: always allowed unless you implement key state) ──
+    def _is_ptt_pressed(self):
+        """
+        Return whether Push-To-Talk key is pressed.
+        Now returns the flag updated from GUI key event filter.
+        """
+        return self.ptt_enabled and self.ptt_pressed
+            
     # ─── Setters to update mute/mode flags from GUI controls ───────────────
     def set_mic_muted(self, muted):
         with self.lock:
@@ -406,3 +491,19 @@ class AudioEngine(QtCore.QObject):
     def set_vox_enabled(self, enabled):
         with self.lock:
             self.vox_enabled = enabled
+            
+    def is_vox_enabled(self):
+        with self.lock:
+            return self.vox_enabled
+
+    def is_ptt_enabled(self):
+        with self.lock:
+            return self.ptt_enabled
+
+    def is_vox_active(self):
+        with self.lock:
+            return self.vox_active
+    
+   
+
+
