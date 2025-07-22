@@ -394,7 +394,7 @@ class MainWindow(QtWidgets.QMainWindow):
             name = u.get("name", "Unknown")
             if name == self.settings.get("display_name", ""):
                 name += " (you)"
-            print(u)
+            logging.debug(u)
             # Status indicator: tx 🟢 (talking), 🔴 muted, default
             mic_icon = "💬" if u.get("tx") else "🔇" if u.get("muted") else " "
             spk_icon = "🔇" if u.get("spk_muted") else "🔊"
