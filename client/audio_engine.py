@@ -261,17 +261,16 @@ class AudioEngine(QtCore.QObject):
 
         try:
             pcm = indata[:, 0].copy()
-
             rms = np.sqrt(np.mean(pcm.astype(np.float32) ** 2))
-            self.inputLevel.emit(rms / 32768.0)
-
-
+            
+            logging.debug(f"[Audio][Mic Mode Check] 1")
             if self.ptt_enabled:
-                # If PTT enabled but not pressed, skip sending audio
+                logging.debug(f"[Audio][PTT Check] Enabled 1")
                 if not self.ptt_pressed:
-                    logging.debug("[Audio][_input_callback] PTT enabled but not pressed, skipping frame")
+                    logging.debug("[Audio][_input_callback] PTT enabled but not pressed, skipping frame 1")
                     return
             elif self.vox_enabled:
+                logging.debug(f"[Audio][VOX] Enabled 1")
                 new_vox = bool(rms >= self.vox_threshold)
                 if new_vox != self.vox_active:
                     self.vox_active = new_vox
@@ -280,16 +279,20 @@ class AudioEngine(QtCore.QObject):
                     logging.debug("[Audio][_input_callback] VOX enabled but no voice detected, skipping frame")
                     return  # Skip sending audio because VOX inactive
             else:
+                logging.debug(f"[Audio][OPEN MIC] 1")
                 # Open Mic mode — always send audio, reset VOX state if needed
                 if self.vox_active:
                     self.vox_active = False
                     self.voxActivity.emit(False)
 
+            ## After PTT/Active So Mic level won't go up
+            self.inputLevel.emit(rms / 32768.0)
 
             # Check PTT
             if self.ptt_enabled:
+                logging.debug(f"[Audio][PTT Check] Enabled 2")
                 if not self.ptt_pressed:
-                    logging.debug("[Audio][_input_callback] PTT enabled but not pressed, skipping frame")
+                    logging.debug("[Audio][_input_callback] PTT enabled but not pressed, skipping frame 2")
                     return
 
             if self.resample_input:
@@ -438,8 +441,8 @@ class AudioEngine(QtCore.QObject):
                 self.ptt_enabled = False
                 self.vox_enabled = True
             else:
-                # Unknown mode — default to Open Mic
-                self.ptt_enabled = False
+                # Unknown mode — default to PTT
+                self.ptt_enabled = True
                 self.vox_enabled = False
         logging.info(f"[AudioEngine] Audio mode set to: {mode}")
 

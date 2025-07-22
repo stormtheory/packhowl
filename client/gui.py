@@ -186,12 +186,14 @@ class MainWindow(QtWidgets.QMainWindow):
         # Restore saved audio-related settings or set defaults
         self.mic_slider.setValue(self.settings.get("mic_vol", 100))
         self.spk_slider.setValue(self.settings.get("spk_vol", 100))
-        saved_mode = self.settings.get("audio_mode", "Open Mic")
-        index = self.audio_mode_combo.findText(saved_mode)
+        
+        # Audio Mode loader
+        saved_audio_mode = self.settings.get("audio_mode", "Push to Talk")
+        index = self.audio_mode_combo.findText(saved_audio_mode)
+        self.audio_engine.set_audio_mode(saved_audio_mode)
         if index != -1:
             self.audio_mode_combo.setCurrentIndex(index)
-
-
+            
         # Restore saved input device selection, fallback gracefully
         saved_input = self.settings.get("input_device", None)
         if saved_input:
@@ -396,12 +398,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _ptt_toggled(self, checked):
         self.settings["ptt"] = checked
-        self.settings.save()
+        #self.settings.save()
         self.audio_engine.set_ptt_enabled(checked)
 
     def _vox_toggled(self, checked):
         self.settings["vox"] = checked
-        self.settings.save()
+        #self.settings.save()
         self.audio_engine.set_vox_enabled(checked)
 
     def save_input_device(self, index):
