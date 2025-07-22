@@ -11,6 +11,7 @@ cd "$(dirname "$0")"
 
 PYENV_DIR='./.venv'
 RUN='.run_client_installed'
+APP='packhowl'
 
 # No running as root!
 ID=$(id -u)
@@ -19,18 +20,22 @@ if [ "$ID" == '0'  ];then
         exit
 fi
 
+
 # CAN ONLY BE ONE!!!!
-# Get script name (fully resolved path or just basename)
-SCRIPT_NAME=$(basename "$0")
-
-# Count how many instances of this script are running (excluding current PID)
-RUNNING=$(pgrep -fx ".*$SCRIPT_NAME" | grep -v "^$$\$" | wc -l)
-
-# Exit if another instance is already running
-if [[ "$RUNNING" -gt 1 ]]; then
-  echo "Another instance of $SCRIPT_NAME is running. Exiting."
-  exit 1
+RAM_DIR='/dev/shm'
+BASENAME=$(basename $0)
+RAM_FILE="${RAM_DIR}/${APP}-${BASENAME}.lock"
+if [ -f "$RAM_FILE" ]; then
+    echo "RAM lock file exists: $RAM_FILE"
+    exit
+else
+	touch $RAM_FILE
+	function CLEAN_UP {
+	rm -f "$RAM_FILE"
+	}
 fi
+
+
 
 # 🛡️ Set safe defaults
 set -euo pipefail
@@ -180,6 +185,7 @@ if [ $LOOPBACK == true ];then
 	#### Run the AI
 		echo "Starting Client"
 		python3 client.py -l
+		CLEAN_UP
 		exit 0        
 elif [ $DEBUG == true ];then
 	#### Export Variables
@@ -187,6 +193,7 @@ elif [ $DEBUG == true ];then
 	#### Run the AI
 		echo "Starting Client"
 		python3 client.py -d
+		CLEAN_UP
 		exit 0
 elif [ $APP == true ];then
 	#### Export Variables
@@ -194,7 +201,9 @@ elif [ $APP == true ];then
 	#### Run the AI
 		echo "Starting Client"
 		python3 client.py
+		CLEAN_UP
 		exit 0
 fi
 echo "ERROR!"
+CLEAN_UP
 exit 1
