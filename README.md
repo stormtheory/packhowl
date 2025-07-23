@@ -23,6 +23,7 @@ Guiding Principle(s):
 Short-term:
 - ✅ Getting a stable and tested product.
 - ✅ Adding a text sizing dropdown for chatbot text size.
+- ✅ Settings button, to re-run firsttime startup.
 - [ ] Audio Tones for join, message alert, disconnect, and alerts
 
 Long-term:

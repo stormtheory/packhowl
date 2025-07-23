@@ -13,6 +13,7 @@ import sounddevice as sd
 import logging
 from pynput import keyboard
 
+from client.settings import Settings
 from config import (APP_NAME, APP_ICON_PATH, CLIENT_IP, SSL_CA_PATH, CERTS_DIR,
                     DATA_DIR, ensure_data_dirs)
 from config import SERVER_PORT as DEFAULT_SERVER_PORT
@@ -75,6 +76,20 @@ class MainWindow(QtWidgets.QMainWindow):
         bottom.addWidget(self.chat_edit, 1)
         bottom.addWidget(send_btn)
         
+            
+        # Create top horizontal layout for controls
+        top_layout = QtWidgets.QHBoxLayout()
+            
+        # Add settings button (⚙) next to text size
+        self.settings_btn = QtWidgets.QPushButton("⚙")
+        self.settings_btn.setFixedWidth(30)
+        self.settings_btn.setToolTip("Open Setup")
+        self.settings_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        self.settings_btn.clicked.connect(self.open_settings_dialog)
+        top_layout.addWidget(self.settings_btn)
+        
+        
+        
         # Font size setup must go here — after self.chat_view is created
         self.chat_font_size_combo = QtWidgets.QComboBox()
         self.chat_font_size_combo.addItems(["10", "12", "14", "16", "18", "20"])
@@ -83,12 +98,29 @@ class MainWindow(QtWidgets.QMainWindow):
         self.chat_font_size_combo.setToolTip("Chat Font Size")
         self.chat_font_size_combo.currentTextChanged.connect(self._chat_font_size_changed)
         
+        top_layout.addStretch()
+                
         # ── Add Text Size Selector at top ────────────────────────────────
         font_controls = QtWidgets.QHBoxLayout()
         font_controls.addWidget(QtWidgets.QLabel("Text Size:"))
         font_controls.addWidget(self.chat_font_size_combo)
         font_controls.addStretch()
-        right_layout.addLayout(font_controls)
+        top_layout.addLayout(font_controls)
+        
+        
+        main_layout.addLayout(top_layout)
+
+        
+        # The toolbar - Makes a toolbar
+        #self.toolbar = QtWidgets.QToolBar()
+        #self.addToolBar(self.toolbar)
+        # Settings button
+        #self.settings_btn = QtWidgets.QToolButton()
+        #self.settings_btn.setText("⚙")  # gear icon; or use QIcon(APP_ICON_PATH)
+        #self.settings_btn.setToolTip("Open Setup")
+        #self.settings_btn.clicked.connect(self.open_settings_dialog)
+        #self.toolbar.addWidget(self.settings_btn)
+
         
         # Chat view widget
         self.chat_view = QtWidgets.QTextBrowser()
@@ -366,6 +398,55 @@ class MainWindow(QtWidgets.QMainWindow):
 
 
     # ── UI updates ───────────────────────────────────────────────────────
+    
+    def open_settings_dialog(self):
+        
+        from client.first_run_settings import FirstRunDialog  # reuse the first-run dialog
+
+        dlg = FirstRunDialog()
+        
+        # Pre-fill with current settings
+        dlg.name_edit.setText(self.settings["display_name"])
+        dlg.ip_edit.setText(self.settings["server_ip"])
+        dlg.port_edit.setText(str(self.settings["server_port"]))
+        dlg.ptt_combo.setCurrentText(self.settings["ptt_key"])
+        dlg.mic_startup_combo.setCurrentText("on" if self.settings["mic_startup"] else "mute")
+        dlg.spk_startup_combo.setCurrentText("on" if self.settings["spk_startup"] else "mute")
+
+        if dlg.exec() == QtWidgets.QDialog.Accepted:
+            # Save new settings
+            self.settings["display_name"] = dlg.display_name
+            self.settings["server_ip"]    = dlg.server_ip
+            self.settings["server_port"]  = dlg.server_port
+            self.settings["ptt_key"]      = dlg.ptt_key
+            self.settings["mic_startup"]  = dlg.mic_startup
+            self.settings["spk_startup"]  = dlg.spk_startup
+            self.settings.save()
+
+            import sys, subprocess
+            # Relaunch the application
+            python = sys.executable
+            script = sys.argv[0]
+            args = sys.argv[1:]
+            # You can pass through debug flags etc. by reusing sys.argv
+            subprocess.Popen([python, script] + args)
+            # Then exit the current instance
+            QtWidgets.QApplication.quit()
+            sys.exit(0)
+
+            ###### Doing a Reload and NOT trying this update for now.
+            # Push updates to subsystems
+            self.net.update_settings(self.settings)
+            self.audio_engine.update_settings(self.settings)
+            self.update_settings(self.settings)
+
+            self.show_status("Settings updated.")
+
+    def update_settings(self, settings: Settings):
+        self.server_ip = settings.get("server_ip", "127.0.0.1")
+        self.server_port = settings.get("server_port", DEFAULT_SERVER_PORT)
+        self.update_server_label()
+    
     def _chat_font_size_changed(self, size_str):
         size = int(size_str)
         font = self.chat_view.font()
@@ -402,9 +483,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
     
     def update_server_label(self):
-        ip = self.settings.get("server_ip", "Unknown")
-        port = self.settings.get("server_port", 12345)
-        self.server_lbl.setText(f"🔗 Server: {ip}:{port}")
+        self.server_ip = self.settings.get("server_ip", "Unknown")
+        self.server_port = self.settings.get("server_port", DEFAULT_SERVER_PORT)
+        self.server_lbl.setText(f"🔗 Server: {self.server_ip}:{self.server_port}")
 
     def show_status(self, message: str, timeout: int = 5000):
         """
