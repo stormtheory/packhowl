@@ -33,8 +33,6 @@ else:
     logger.setLevel(logging.INFO)     # INFO, DEBUG
 
 
-
-
 """
 Main client script for Silent Link
 • Starts Qt application with PySide6
@@ -115,6 +113,8 @@ class FirstRunDialog(QtWidgets.QDialog):
         self.name_edit.textChanged.connect(self.validate)
         self.ip_edit.textChanged.connect(self.validate)
         self.port_edit.textChanged.connect(self.validate)
+        
+        self.validate()
 
     def validate(self):
         name = self.name_edit.text().strip()
