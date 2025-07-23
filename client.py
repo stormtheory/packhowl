@@ -18,6 +18,7 @@ from config import SERVER_PORT as DEFAULT_SERVER_PORT
 import socket
 import argparse
 import logging
+from pathlib import Path
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-d", "--debug", action='store_true', help='Run GUI in debug mode')
@@ -32,7 +33,6 @@ else:
     logger.setLevel(logging.INFO)     # INFO, DEBUG
 
 
-
 """
 Main client script for Silent Link
 • Starts Qt application with PySide6
@@ -40,6 +40,43 @@ Main client script for Silent Link
 • Initializes network thread, audio engine, and GUI
 • Handles graceful shutdown
 """
+
+###############################################################################
+# ─── ERROR CHECKING ─────────────────────────────────────────────────────────
+###############################################################################
+PROMPT_EXIT = False
+
+if DATA_DIR.is_dir():
+    pass
+else:
+    PROMPT_EXIT = True
+    print(f"\n Directory missing: {DATA_DIR}\n ")
+
+# Check if file exists
+if CERTS_DIR.is_dir():
+    pass
+else:
+    PROMPT_EXIT = True
+    print(f"\n Directory missing: {CERTS_DIR}\n ")
+    
+if SSL_CA_PATH.is_file():
+    pass
+else:
+    PROMPT_EXIT = True
+    print(f"\n \n File missing: {SSL_CA_PATH}")
+    print(f"\n This file: {SSL_CA_PATH} \n needs to be generated at the \n server and shared with this client in {CERTS_DIR} \n")
+
+hostname = socket.gethostname()
+HOST_PEM_PATH = CERTS_DIR / f"{hostname}.pem"
+if HOST_PEM_PATH.is_file():
+    pass
+else:
+    PROMPT_EXIT = True
+    print(f"\n \n File missing: {CERTS_DIR}/{hostname}.pem")
+    print(f"\n This file: {CERTS_DIR}/{hostname}.pem \n needs to be generated at the \n server and shared with this client in {CERTS_DIR} \n")
+    
+if PROMPT_EXIT is True:
+    exit()
 
 
 
@@ -76,6 +113,8 @@ class FirstRunDialog(QtWidgets.QDialog):
         self.name_edit.textChanged.connect(self.validate)
         self.ip_edit.textChanged.connect(self.validate)
         self.port_edit.textChanged.connect(self.validate)
+        
+        self.validate()
 
     def validate(self):
         name = self.name_edit.text().strip()

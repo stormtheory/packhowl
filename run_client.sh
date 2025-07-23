@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 cd "$(dirname "$0")"
 
 # Written by StormTheory
@@ -44,10 +44,6 @@ else
         echo "ERROR: $RAM_DIR not present to lock app."
 fi
 
-
-# 🛡️ Set safe defaults
-set -euo pipefail
-IFS=$'\n\t'
 
 # 🧾 Help text
 show_help() {
@@ -96,7 +92,6 @@ done
 
 
 if [ ! -d $PYENV_DIR ];then
-        APT_LIST=$(apt list 2>/dev/null)
         ENV_INSTALL=True
         PIP_INSTALL=True
 elif [ -f $PYENV_DIR/$RUN ];then
@@ -106,7 +101,6 @@ elif [ -f $PYENV_DIR/$RUN ];then
         PIP_INSTALL=False
 elif [ ! -f $PYENV_DIR/$RUN ];then
 	echo "✅ Installed... .venv"
-        APT_LIST=$(apt list 2>/dev/null)
         ENV_INSTALL=False
         PIP_INSTALL=True
 else
@@ -116,19 +110,15 @@ fi
 if [ "$ENV_INSTALL" == 'True' ];then
 ### Checking dependencies
         
-        if echo "$APT_LIST"|grep python3.12-dev;then
-                echo "✅ Installed... python3.12-dev"
-        else
-                echo "⚠️ Installing python3.12-dev"
-                sudo apt install python3.12-dev
-        fi
-
-        if echo "$APT_LIST"|grep python3.12-venv;then
-                echo "✅ Installed... python3.12-venv"
-        else
-                echo "⚠️ Installing python3.12-venv"
-                sudo apt install python3.12-venv
-        fi
+PACKAGES='python3.12-venv python3.12-dev'
+for package in $PACKAGES; do
+    if dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q "install ok installed"; then
+        echo "✅ Installed... $package"
+    else
+        echo "⚠️  $package is required and must be installed from your distro."
+        sudo apt update && sudo apt install -y "$package"
+    fi
+done
 
 #### Build the Env Box	
 	# 1. Create a virtual environment
@@ -147,19 +137,65 @@ if [ "$PIP_INSTALL" == True ];then
 	### CLIENT NEEDS
         source $PYENV_DIR/bin/activate
 
+        
+        package=portaudio19-dev 
+        if dpkg-query -W -f='${Status}' $package 2>/dev/null | grep -q "install ok installed";then
+                echo "✅ Installed... $package"
+        else
+                echo "⚠️ $package is required and must be installed from your distro for audio."
+                sudo apt install $package
+        fi
+        package=cmake 
+        if dpkg-query -W -f='${Status}' $package 2>/dev/null | grep -q "install ok installed";then
+                echo "✅ Installed... $package"
+        else
+                echo "⚠️ $package is required and must be installed from your distro compiling of audio libraries."
+                sudo apt install $package
+        fi
 
-        if echo "$APT_LIST"|grep portaudio19-dev;then
-                echo "✅ Installed... portaudio19-dev"
-        else
-                echo "⚠️ Install portaudio19-dev for audio"
-                sudo apt install portaudio19-dev
+        ######################################### xcb ##############################################
+        # qt.qpa.plugin: From 6.5.0, xcb-cursor0 or libxcb-cursor0 is needed to load the Qt xcb platform plugin.
+        # qt.qpa.plugin: Could not load the Qt platform plugin "xcb" in "" even though it was found.
+        # This application failed to start because no Qt platform plugin could be initialized.
+        #
+        # This checks for either libxcb‑cursor0 or its legacy name xcb‑cursor0.
+        # --- 1. Detect if either package is already installed --------------------
+        check_xcb_cursor() {
+        PKGS='libxcb-cursor0 xcb-cursor0'
+        for PKG in $PKGS; do
+                if dpkg-query -W -f='${Status}' "$PKG" 2>/dev/null|grep -q "install ok installed"; then
+                echo "✅ Installed... $PKG"
+                return 0                                       # All good, exit early
+                fi
+        done
+        echo "⚠️  Neither libxcb-cursor0 nor xcb-cursor0 found.  Attempting install..."
+        # --- 2. Discover which package name exists in the current repositories ----
+        # (Using apt-cache policy because it is fast, does not modify system state,
+        #  and respects APT pinning/mirrors.)
+        for PKG in libxcb-cursor0 xcb-cursor0; do
+                if dpkg-query -W -f='${Status}' "$PKG" 2>/dev/null|grep -q "install ok installed"; then
+                CANDIDATE="$PKG"
+                break
+                fi
+        done
+        if [ -z "$CANDIDATE" ]; then
+                echo "❌ No matching xcb‑cursor package available in your APT sources."
+                return 1
         fi
-        if echo "$APT_LIST"|grep cmake;then
-                echo "✅ Installed... cmake"
+        # --- 3. Install the discovered candidate package -------------------------
+        echo "ℹ️  Installing $CANDIDATE ..."
+        sudo apt update && sudo apt install -y "$CANDIDATE"
+        # --- 4. Post‑install verification ----------------------------------------
+        if dpkg-query -W -f='${Status}' "$PKG" 2>/dev/null|grep -q "install ok installed"; then
+                echo "✅ Successfully installed $CANDIDATE"
+                return 0
         else
-                echo "⚠️ Install cmake for compiling for audio/voice libs"
-                sudo apt install cmake
+                echo "❌ Installation of $CANDIDATE appears to have failed."
+                return 1
         fi
+        }
+        check_xcb_cursor
+        #################################### END ################################################################################
 
         ### GUI
         pip install PySide6
@@ -179,6 +215,10 @@ if [ "$PIP_INSTALL" == True ];then
 
 touch $PYENV_DIR/$RUN
 fi
+
+# 🛡️ Set safe defaults
+set -euo pipefail
+IFS=$'\n\t'
 
 if [ ! -d $HOME/.packhowl/certs ];then
         mkdir -p ${HOME}/.packhowl/certs
