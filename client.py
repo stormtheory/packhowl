@@ -2,7 +2,6 @@
 # client.py
 from PySide6 import QtWidgets
 import sys
-import asyncio
 import json
 from typing import Optional
 
@@ -92,6 +91,28 @@ os.environ["QT_QPA_PLATFORM"] = "xcb"
 class FirstRunDialog(QtWidgets.QDialog):
     """Ask for Display Name, Server IP, and Port on first launch."""
     def __init__(self):
+        PTT_KEY_OPTIONS = [
+            "leftalt",
+            "rightalt",
+            "alt",
+            "leftctrl",
+            "rightctrl",
+            "ctrl",
+            "leftshift",
+            "rightshift",
+            "shift",
+            "space",
+            "f1",
+            "f2"
+        ]
+        MIC_STARTUP_OPTIONS = [
+            "mute",
+            "on"
+        ]
+        SPK_STARTUP_OPTIONS = [
+            "on",
+            "mute"
+        ]
         super().__init__()
         self.setWindowTitle(f"{APP_NAME} – Setup")
         form = QtWidgets.QFormLayout(self)
@@ -99,10 +120,19 @@ class FirstRunDialog(QtWidgets.QDialog):
         self.name_edit = QtWidgets.QLineEdit()
         self.ip_edit = QtWidgets.QLineEdit()
         self.port_edit = QtWidgets.QLineEdit(str(DEFAULT_SERVER_PORT))
+        self.ptt_combo = QtWidgets.QComboBox()
+        self.ptt_combo.addItems(PTT_KEY_OPTIONS)
+        self.mic_startup_combo = QtWidgets.QComboBox()
+        self.mic_startup_combo.addItems(MIC_STARTUP_OPTIONS)
+        self.spk_startup_combo = QtWidgets.QComboBox()
+        self.spk_startup_combo.addItems(SPK_STARTUP_OPTIONS)
 
         form.addRow("Display Name:", self.name_edit)
         form.addRow("Server IP:", self.ip_edit)
         form.addRow("Server Port:", self.port_edit)
+        form.addRow("Push-To-Talk Key:", self.ptt_combo)
+        form.addRow("Mic at App Startup:", self.mic_startup_combo)
+        form.addRow("Speaker at App Startup:", self.spk_startup_combo)
 
         self.save_btn = QtWidgets.QPushButton("Save")
         self.save_btn.clicked.connect(self.accept)
@@ -120,7 +150,7 @@ class FirstRunDialog(QtWidgets.QDialog):
         name = self.name_edit.text().strip()
         ip = self.ip_edit.text().strip()
         port = self.port_edit.text().strip()
-
+        
         # Name: 1–32 chars, letters, numbers, spaces only
         valid_name = 1 <= len(name) <= 32 and all(c.isalnum() or c.isspace() for c in name)
 
@@ -160,6 +190,19 @@ class FirstRunDialog(QtWidgets.QDialog):
         except ValueError:
             pass
         return None
+    
+    @property
+    def ptt_key(self) -> str:
+        return self.ptt_combo.currentText()
+    
+    @property
+    def mic_startup(self) -> bool:
+        return self.mic_startup_combo.currentText().lower() == "on" # True value
+
+    @property
+    def spk_startup(self) -> bool:
+        return self.spk_startup_combo.currentText().lower() == "on" # True value
+
 
 def main():
     app = QtWidgets.QApplication(sys.argv)
@@ -178,6 +221,9 @@ def main():
             settings["display_name"] = dlg.display_name
             settings["server_ip"]    = dlg.server_ip
             settings["server_port"]  = dlg.server_port
+            settings["ptt_key"]      = dlg.ptt_key
+            settings["mic_startup"]  = dlg.mic_startup
+            settings["spk_startup"]  = dlg.spk_startup
             settings.save()  # Save immediately after first run setup
         else:
             sys.exit(0)
