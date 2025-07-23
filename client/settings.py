@@ -14,16 +14,19 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "server_ip":    "",           # Remote server IP address
     "server_port":  DEFAULT_SERVER_PORT,  # Server port number
 
-    "audio_input":  "default",    # Selected audio input device
-    "audio_output": "default",    # Selected audio output device
+    "input_device":  "default",    # Selected audio input device
+    "output_device": "default",    # Selected audio output device
 
     "ptt_key":      "leftalt",    # Default push-to-talk hotkey
-    "ptt":          False,        # Push-to-talk toggle state
-    "vox":          False,        # Voice activation toggle state
+    "mic_startup":  "false",      # [ True | false ] Default at starup setting
+    "mic_gain":     1.16,
 
-    "mic_vol":      100,          # Microphone volume (0–100)
+    "mic_vol":      50,           # Microphone volume (0–100)
     "spk_vol":      100           # Speaker volume (0–100)
 }
+
+#    "ptt":          False,        # Push-to-talk toggle state
+#    "vox":          False,        # Voice activation toggle state
 
 class Settings:
     def __init__(self) -> None:
