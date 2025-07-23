@@ -106,8 +106,12 @@ class FirstRunDialog(QtWidgets.QDialog):
             "f2"
         ]
         MIC_STARTUP_OPTIONS = [
-            "off",
+            "mute",
             "on"
+        ]
+        SPK_STARTUP_OPTIONS = [
+            "on",
+            "mute"
         ]
         super().__init__()
         self.setWindowTitle(f"{APP_NAME} – Setup")
@@ -120,12 +124,15 @@ class FirstRunDialog(QtWidgets.QDialog):
         self.ptt_combo.addItems(PTT_KEY_OPTIONS)
         self.mic_startup_combo = QtWidgets.QComboBox()
         self.mic_startup_combo.addItems(MIC_STARTUP_OPTIONS)
+        self.spk_startup_combo = QtWidgets.QComboBox()
+        self.spk_startup_combo.addItems(SPK_STARTUP_OPTIONS)
 
         form.addRow("Display Name:", self.name_edit)
         form.addRow("Server IP:", self.ip_edit)
         form.addRow("Server Port:", self.port_edit)
         form.addRow("Push-To-Talk Key:", self.ptt_combo)
-        form.addRow("Mic Startup:", self.mic_startup_combo)
+        form.addRow("Mic at App Startup:", self.mic_startup_combo)
+        form.addRow("Speaker at App Startup:", self.spk_startup_combo)
 
         self.save_btn = QtWidgets.QPushButton("Save")
         self.save_btn.clicked.connect(self.accept)
@@ -192,6 +199,9 @@ class FirstRunDialog(QtWidgets.QDialog):
     def mic_startup(self) -> bool:
         return self.mic_startup_combo.currentText().lower() == "on" # True value
 
+    @property
+    def spk_startup(self) -> bool:
+        return self.spk_startup_combo.currentText().lower() == "on" # True value
 
 
 def main():
@@ -213,6 +223,7 @@ def main():
             settings["server_port"]  = dlg.server_port
             settings["ptt_key"]      = dlg.ptt_key
             settings["mic_startup"]  = dlg.mic_startup
+            settings["spk_startup"]  = dlg.spk_startup
             settings.save()  # Save immediately after first run setup
         else:
             sys.exit(0)

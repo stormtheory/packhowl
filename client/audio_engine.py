@@ -70,11 +70,16 @@ class AudioEngine(QtCore.QObject):
             self.mic_muted = False
         else:
             self.mic_muted = True
+            
+        spk_startup = self.settings.get("spk_startup", True)
+        if spk_startup is True:
+            self.spk_muted = False
+        else:
+            self.spk_muted = True
 
         # Internal flags for mute states and modes
         self.loopback_enabled = False
-        self.mic_paused = False 
-        self.spk_muted = False
+        self.mic_paused = False
         self.ptt_pressed = False  # Track PTT state from GUI
         #self.ptt_enabled = self.settings.get("ptt", False)
         #self.vox_enabled = self.settings.get("vox", False)
