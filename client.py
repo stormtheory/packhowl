@@ -10,6 +10,7 @@ from client.settings import Settings
 from client.network import NetworkThread
 from client.audio_engine import AudioEngine
 from client.gui import MainWindow
+from client.first_run_settings import FirstRunDialog
 
 from config import (APP_NAME, APP_ICON_PATH, CLIENT_IP, SSL_CA_PATH, CERTS_DIR,
                     DATA_DIR, ensure_data_dirs)

@@ -9,6 +9,7 @@ import sounddevice as sd
 import samplerate
 import logging
 import time
+from client.settings import Settings
 from PySide6.QtCore import QMetaObject, Qt, Slot  # near other QtCore imports
 from PySide6 import QtCore  # Added for Qt signal support
 
@@ -102,6 +103,9 @@ class AudioEngine(QtCore.QObject):
         # Lock for thread-safe state changes
         self.lock = threading.Lock()
 
+    def update_settings(self, settings: Settings):
+        self._loopback_enabled = settings.get("mic_startup", False)
+    
     def _status(self, msg: str):
         """
         Send status message to GUI via callback or fallback to print().
@@ -238,6 +242,7 @@ class AudioEngine(QtCore.QObject):
 
     def stop(self):
         logging.debug("[Audio] Stopping audio streams")
+        print('Stopping Audio')
         self.running = False
         try:
             if self.stream_in:

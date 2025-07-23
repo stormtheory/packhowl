@@ -61,7 +61,13 @@ class NetworkThread(QtCore.QThread):
         self.audio_engine = audio_engine
         global SERVER_PORT
         SERVER_PORT = self.settings.get("server_port", 12345)
+        self.server_ip = self.settings.get("server_ip", 12345)
+        self.server_port = self.settings.get("server_port", 12345)
+        self._need_reconnect = False
         self._stop = False
+        self._reader = None
+        self._writer = None
+        self._send_task = None
         self._loop = None  # Event loop reference for coroutine scheduling
         self.outbound_queue = asyncio.Queue()  # Thread-safe outbound message queue
 
@@ -69,7 +75,15 @@ class NetworkThread(QtCore.QThread):
         """
         Entry point for QThread, runs the asyncio event loop.
         """
-        asyncio.run(self._main())
+        self._loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self._loop)
+        try:
+            self._loop.run_until_complete(self._main())
+        except Exception:
+            traceback.print_exc()
+        finally:
+            self._loop.close()
+            self._loop = None
 
     async def _main(self):
         """
@@ -92,13 +106,13 @@ class NetworkThread(QtCore.QThread):
 
     async def _connect_and_loop(self):
         ip = self.settings["server_ip"]
-        self.status.emit(f"[INFO] connecting to {ip}:{SERVER_PORT}")
+        self.status.emit(f"[INFO] connecting to {ip}:{self.server_port}")
         
         def get_local_ip():
             try:
                 # This doesn't send any traffic, it just selects the appropriate local IP
                 with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-                    s.connect(('1.1.1.1', SERVER_PORT))  # Use a public DNS for reference
+                    s.connect(('1.1.1.1', DEFAULT_SERVER_PORT))  # Use a public DNS for reference
                     return s.getsockname()[0]
             except Exception:
                 return "127.0.0.1"  # fallback
@@ -112,9 +126,19 @@ class NetworkThread(QtCore.QThread):
         ctx.verify_mode = ssl.CERT_REQUIRED
 
         # NOTE: load client cert/key here if you require client auth
-        reader, writer = await asyncio.open_connection(
-            host=ip, port=SERVER_PORT, ssl=ctx, local_addr=(CLIENT_IP, 0)
+        # ─── Connect Securely ───────────────────────────────────────────────
+        self._reader, self._writer = await asyncio.open_connection(
+            host=self.server_ip,
+            port=self.server_port,
+            ssl=ctx,
+            local_addr=(CLIENT_IP, 0)
         )
+
+        # Start the background sender loop and keep a handle so we can cancel it
+        self._send_task = asyncio.create_task(self._send_outgoing(self._writer))
+
+
+
         self.status.emit("[OK] connected")
 
         # Send "hello" with display_name
@@ -126,14 +150,16 @@ class NetworkThread(QtCore.QThread):
                 "muted": "True"    # Default
             }
 
-        writer.write((json.dumps(hello) + "\n").encode())
-        await writer.drain()
-
-        send_task = asyncio.create_task(self._send_outgoing(writer))  # background sender loop
+        self._writer.write((json.dumps(hello) + "\n").encode())
+        await self._writer.drain()
 
         # main RX loop
-        while not reader.at_eof() and not self._stop:
-            line = await reader.readline()
+        while not self._reader.at_eof() and not self._stop:
+            try:
+                line = await asyncio.wait_for(self._reader.readline(), timeout=1.0)
+            except asyncio.TimeoutError:
+                continue  # check _stop and keep waiting
+
             if not line or self._stop:
                 break
             msg = json.loads(line.decode())
@@ -157,22 +183,22 @@ class NetworkThread(QtCore.QThread):
                     logging.debug(f"[Net RX] Unknown message type: {msg_type}")
 
 
-        send_task.cancel()
+        self._send_task.cancel()
         try:
-            await send_task
+            await self._send_task
         except asyncio.CancelledError:
             pass
 
 
         self.status.emit("[WARN] server closed connection")
         try:
-            writer.write_eof()
+            self._writer.write_eof()
         except Exception:
             pass
         try:
-            await writer.drain()
-            writer.close()
-            await writer.wait_closed()
+            await self._writer.drain()
+            self._writer.close()
+            await self._writer.wait_closed()
         except Exception as e:
             print(f"[WARN] Close error: {e}")
 
@@ -181,6 +207,9 @@ class NetworkThread(QtCore.QThread):
             while not self._stop:
                 msg = await self.outbound_queue.get()
 
+                if msg.get("type") == "stop":
+                    print('Stopping TX/RX')
+                    break
                 if msg.get("type") == "audio":
                     logging.debug(f"[Net TX] Sending audio packet ({len(msg['data']) // 2} bytes)")
 
@@ -203,8 +232,72 @@ class NetworkThread(QtCore.QThread):
 
     def stop(self):
         """
-        Signals the thread to stop gracefully.
+        Signals the thread and all async tasks to stop gracefully.
         """
+        print('Stopping network')
         self._stop = True
+
+        # Schedule cancellation of running tasks safely from outside the loop
+        if self._loop and not self._loop.is_closed():
+            def shutdown():
+                if self._send_task:
+                    self._send_task.cancel()
+                if self._writer:
+                    try:
+                        self._writer.write_eof()
+                    except Exception:
+                        pass
+                    try:
+                        self._writer.close()
+                    except Exception:
+                        pass
+                # Put poison pill in outbound queue to unblock send loop
+                print('Net poison pill')
+                asyncio.create_task(self.outbound_queue.put({"type": "stop"}))
+
+            self._loop.call_soon_threadsafe(shutdown)
+            
+    def update_settings(self, settings: Settings):
+        print("NET update_settings called with:", settings)
+        new_ip = settings["server_ip"] if "server_ip" in settings else "127.0.0.1"
+        new_port = settings["server_port"] if "server_port" in settings else DEFAULT_SERVER_PORT
+
+        # If new settings differ, set flags
+        if self.server_ip != new_ip or self.server_port != new_port:
+            self.server_ip = new_ip
+            self.server_port = new_port
+            self.status.emit("[INFO] Server settings changed, reconnecting...")
+            self._need_reconnect = True
+
+    def reconnect(self):
+        """
+        Restart the connection with the updated server IP and port.
+        Stops the current connection loop and triggers a reconnect.
+        """
+        self.status.emit("[INFO] Reconnecting to new server settings...")
+
+        # Stop the current network operation
+        self._stop = True
+
+        # If event loop exists, stop it safely
         if self._loop:
             self._loop.call_soon_threadsafe(self._loop.stop)
+
+        # Wait briefly to ensure clean shutdown
+        import time
+        time.sleep(0.1)
+
+        # Reset stop flag and start the run loop again on a new thread
+        self._stop = False
+
+        # Since this is QThread, to restart it you typically need to create a new thread instance
+        # or emit a signal to your main thread to restart the thread cleanly.
+        # Here’s a common pattern:
+
+        if self.isRunning():
+            self.quit()  # Request thread to quit
+            self.wait()  # Wait for it to finish
+
+        # Restart thread (starts run())
+        self.start()
+
