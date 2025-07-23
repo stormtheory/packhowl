@@ -37,7 +37,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # Create a central widget container for QMainWindow
         central_widget = QtWidgets.QWidget()
         self.setCentralWidget(central_widget)  # Set central widget for QMainWindow
-
+        
         # Create main layout and set it on the central widget
         main_layout = QtWidgets.QVBoxLayout()
         central_widget.setLayout(main_layout)
@@ -69,14 +69,36 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # ── Right pane (chat) ─────────────────────────────────────────────
         right_layout = QtWidgets.QVBoxLayout()
-        self.chat_view = QtWidgets.QTextBrowser()
         bottom = QtWidgets.QHBoxLayout()
         self.chat_edit = QtWidgets.QLineEdit()
         send_btn = QtWidgets.QPushButton("Send")
         bottom.addWidget(self.chat_edit, 1)
         bottom.addWidget(send_btn)
+        
+        # Font size setup must go here — after self.chat_view is created
+        self.chat_font_size_combo = QtWidgets.QComboBox()
+        self.chat_font_size_combo.addItems(["10", "12", "14", "16", "18", "20"])
+        saved_size = str(self.settings.get("chat_font_size", "10"))
+        self.chat_font_size_combo.setCurrentText(saved_size)
+        self.chat_font_size_combo.setToolTip("Chat Font Size")
+        self.chat_font_size_combo.currentTextChanged.connect(self._chat_font_size_changed)
+        
+        # ── Add Text Size Selector at top ────────────────────────────────
+        font_controls = QtWidgets.QHBoxLayout()
+        font_controls.addWidget(QtWidgets.QLabel("Text Size:"))
+        font_controls.addWidget(self.chat_font_size_combo)
+        font_controls.addStretch()
+        right_layout.addLayout(font_controls)
+        
+        # Chat view widget
+        self.chat_view = QtWidgets.QTextBrowser()
         right_layout.addWidget(self.chat_view, 3)
         right_layout.addLayout(bottom)
+
+        # Apply saved font size to chat view
+        chat_font = self.chat_view.font()
+        chat_font.setPointSize(int(saved_size))
+        self.chat_view.setFont(chat_font)
 
         # ── Audio controls ─────────────────────────────────────────────────────
         self.ptt_pressed = False
@@ -92,7 +114,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.input_device = QtWidgets.QComboBox()
         self.audio_mode_combo = QtWidgets.QComboBox()
         self.audio_mode_combo.addItems(["Open Mic", "Push to Talk", "Voice Activated"])
-
 
         # Speaker controls (buttons + slider + combo + check)
         self.mute_spk_btn = QtWidgets.QPushButton("Mute Audio")
@@ -139,7 +160,6 @@ class MainWindow(QtWidgets.QMainWindow):
         audio_layout.addWidget(self.mic_level_bar,                3, 1)
         audio_layout.addWidget(QtWidgets.QLabel("Speaker Level", alignment=Qt.AlignRight), 3, 2)
         audio_layout.addWidget(self.spk_level_bar,                3, 3)
-
 
         audio_controls.setLayout(audio_layout)
         right_layout.addWidget(audio_controls)
@@ -346,6 +366,14 @@ class MainWindow(QtWidgets.QMainWindow):
 
 
     # ── UI updates ───────────────────────────────────────────────────────
+    def _chat_font_size_changed(self, size_str):
+        size = int(size_str)
+        font = self.chat_view.font()
+        font.setPointSize(size)
+        self.chat_view.setFont(font)
+        self.settings["chat_font_size"] = size
+        self.settings.save()
+    
     def update_mic_gain(self, value):
         """
         Called when mic gain slider is changed.
