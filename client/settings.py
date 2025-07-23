@@ -18,7 +18,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "output_device": "default",    # Selected audio output device
 
     "ptt_key":      "leftalt",    # Default push-to-talk hotkey
-    "mic_startup":  "false",      # [ True | false ] Default at starup setting
+    "mic_startup":  "false",      # [ true | false ] Default at starup setting
     "mic_gain":     1.16,
 
     "mic_vol":      50,           # Microphone volume (0–100)

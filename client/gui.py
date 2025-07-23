@@ -171,10 +171,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self.net.chatmsg.connect(self._handle_incoming_msg)
 
         # ── Restore mute states and connect buttons ─────────────────
-        self.mic_muted = True
         self.spk_muted = False
-        self._update_mute_buttons()
+        
+        mic_startup = self.settings.get("mic_startup", True)
+        if mic_startup is True:
+            self.mic_muted = False
+        else:
+            self.mic_muted = True
 
+        self._update_mute_buttons()
+        
         self.mute_mic_btn.clicked.connect(self._toggle_mic_mute)
         self.mute_spk_btn.clicked.connect(self._toggle_spk_mute)
 
