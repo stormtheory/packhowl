@@ -10,7 +10,7 @@ import argparse, asyncio, json, ssl, time, base64
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Dict
-from config import (SERVER_BIND, SSL_CERT_PATH, SSL_CA_PATH, MAX_USERS,
+from config import (SERVER_BIND, SSL_CERT_PATH, SSL_CA_PATH, MAX_USERS, CERTS_DIR,
                     ensure_data_dirs)
 from config import SERVER_PORT as PORT
 import logging
@@ -33,6 +33,36 @@ logging.debug(f"CERT: {SSL_CERT_PATH}, CA: {SSL_CA_PATH}")
 def get_user_list(self) -> list[dict]:
     """Build list of connected users with display name and IP."""
     return [{"name": c.cn, "ip": c.ip} for c in self.clients.values()]
+
+
+###############################################################################
+# ─── ERROR CHECKING ─────────────────────────────────────────────────────────
+###############################################################################
+PROMPT_EXIT = False
+
+if CERTS_DIR.is_dir():
+    pass
+else:
+    PROMPT_EXIT = True
+    print(f"\n Directory missing: {CERTS_DIR}\n ")
+    
+if SSL_CA_PATH.is_file():
+    pass
+else:
+    PROMPT_EXIT = True
+    print(f"\n \n File missing: {SSL_CA_PATH}")
+    print(f"\n This file: {SSL_CA_PATH} \n needs to be generated at the \n server and shared with this client in {CERTS_DIR} \n")
+
+if SSL_CERT_PATH.is_file():
+    pass
+else:
+    PROMPT_EXIT = True
+    print(f"\n \n File missing: {SSL_CERT_PATH}")
+    print(f"\n This file: {SSL_CERT_PATH} \n needs to be generated at the \n server and shared with this client in {CERTS_DIR} \n")
+    
+if PROMPT_EXIT is True:
+    exit()
+
 
 ###############################################################################
 # ─── Data structures ────────────────────────────────────────────────────────
