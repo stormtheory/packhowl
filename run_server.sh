@@ -5,10 +5,11 @@ cd "$(dirname "$0")"
 # https://github.com/stormtheory/packhowl
 
 ### Creates or opens the virtual Enviorment needed for app tools to run
-##### Note you will need at least 4G of /tmp space available for the startup install.
-##### Virtual environment may take up 2Gbs of space for all needed packages.
+##### Note you will need at least 2G of /tmp space available for the startup install.
+##### Virtual environment may take up 500Mb of space for all needed packages.
 ##### Runs the creating and installing of the virtual environment setup one time.
 
+APP='packhowl'
 PYENV_DIR='./.venv'
 RUN='.run_server_installed'
 
@@ -19,9 +20,13 @@ if [ "$ID" == '0'  ];then
         exit
 fi
 
-# 🛡️ Set safe defaults
-set -euo pipefail
-IFS=$'\n\t'
+# See where we are working from and with
+if [[ "$(pwd)" == "/opt/"* ]]; then
+	PYENV_DIR="${HOME}/.venv-${APP}"
+else
+	PYENV_DIR='./.venv'
+fi
+
 
 # 🧾 Help text
 show_help() {
@@ -66,17 +71,15 @@ done
 
 
 if [ ! -d $PYENV_DIR ];then
-        APT_LIST=$(apt list 2>/dev/null)
         ENV_INSTALL=True
         PIP_INSTALL=True
 elif [ -f $PYENV_DIR/$RUN ];then
-        echo "✅ Installed... .venv"
+        echo "✅ Installed... $PYENV_DIR"
         echo "✅ Installed... $RUN"
         ENV_INSTALL=False
         PIP_INSTALL=False
 elif [ ! -f $PYENV_DIR/$RUN ];then
-	echo "✅ Installed... .venv"
-        APT_LIST=$(apt list 2>/dev/null)
+	echo "✅ Installed... $PYENV_DIR"
         ENV_INSTALL=False
         PIP_INSTALL=True
 else
@@ -86,19 +89,15 @@ fi
 if [ "$ENV_INSTALL" == 'True' ];then
 ### Checking dependencies
         
-        if echo "$APT_LIST"|grep python3.12-dev;then
-                echo "✅ Installed... python3.12-dev"
-        else
-                echo "⚠️ Installing python3.12-dev"
-                sudo apt install python3.12-dev
-        fi
-
-        if echo "$APT_LIST"|grep python3.12-venv;then
-                echo "✅ Installed... python3.12-venv"
-        else
-                echo "⚠️ Installing python3.12-venv"
-                sudo apt install python3.12-venv
-        fi
+PACKAGES='python3.12-venv python3.12-dev'
+for package in $PACKAGES; do
+    if dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q "install ok installed"; then
+        echo "✅ Installed... $package"
+    else
+        echo "⚠️  $package is required and must be installed from your distro."
+        sudo apt update && sudo apt install -y "$package"
+    fi
+done
 
 #### Build the Env Box	
 	# 1. Create a virtual environment
@@ -112,18 +111,17 @@ if [ "$ENV_INSTALL" == 'True' ];then
 fi
 
 
-
 if [ "$PIP_INSTALL" == True ];then
 	### SERVER NEEDS
         source $PYENV_DIR/bin/activate
 
-
-
-
-
 touch $PYENV_DIR/$RUN
 fi
 
+
+# 🛡️  Set safe defaults
+set -euo pipefail
+IFS=$'\n\t'
 
 
 #### Run the Box
