@@ -9,6 +9,8 @@ cd "$(dirname "$0")"
 ##### Virtual environment may take up 2Gbs of space for all needed packages.
 ##### Runs the creating and installing of the virtual environment setup one time.
 
+
+APP='packhowl'
 PYENV_DIR='./.venv'
 RUN='.run_client_installed'
 
@@ -19,6 +21,12 @@ if [ "$ID" == '0'  ];then
         exit
 fi
 
+# See where we are working from and with
+if [[ "$(pwd)" == "/opt/"* ]]; then
+        PYENV_DIR="${HOME}/.venv-${APP}"
+else
+        PYENV_DIR='./.venv'
+fi
 
 # CAN ONLY BE ONE!!!!
 APP='packhowl'
@@ -95,12 +103,12 @@ if [ ! -d $PYENV_DIR ];then
         ENV_INSTALL=True
         PIP_INSTALL=True
 elif [ -f $PYENV_DIR/$RUN ];then
-        echo "✅ Installed... .venv"
+        echo "✅ Installed... $PYENV_DIR"
         echo "✅ Installed... $RUN"
         ENV_INSTALL=False
         PIP_INSTALL=False
 elif [ ! -f $PYENV_DIR/$RUN ];then
-	echo "✅ Installed... .venv"
+	echo "✅ Installed... $PYENV_DIR"
         ENV_INSTALL=False
         PIP_INSTALL=True
 else

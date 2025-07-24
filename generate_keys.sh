@@ -8,10 +8,23 @@ cd "$(dirname "$0")"
 SERVER='server'
 CLIENTS=''
 
-DATA_DIR="${HOME}/.packhowl"
+user=packhowl
+user_home="/var/lib/${user}"
+DATA_DIR="${user_home}/.packhowl"
 
-WORKING=./certs
-
+# See where we are working from and with
+if [[ "$(pwd)" == "/opt/"* ]]; then
+	WORKING=/etc/ssl/packhowl
+	ID=$(id -u)
+	if [ "$ID" != 0 ];then
+        	sudo $0
+        	exit
+	else
+        	cd "$(dirname "$0")"
+	fi
+else
+	WORKING=./certs
+fi
 
 ########################## NOTES #######################################
 
@@ -32,10 +45,6 @@ WORKING=./certs
 
 
 ####################### OPTIONS #################################################
-
-# 🛡️ Set safe defaults
-set -euo pipefail
-IFS=$'\n\t'
 
 # 🧾 Help text
 show_help() {
@@ -62,19 +71,19 @@ DEBUG=false
 # 🔍 Parse options
 while getopts ":c:n:dh" opt; do
   case ${opt} in
-    n)
-		GEN_DIR=true
-	    GEN_CA=true
-		GEN_CN=true
-	    CLIENTS="$OPTARG"
+     c)
+	GEN_DIR=true
+        GEN_CA=true
+	GEN_CN=true
+        CLIENTS="$OPTARG"
         ;;	
-	n)
-		GEN_DIR=true
-	    GEN_CA=false
-		GEN_CN=true
-	    CLIENTS="$OPTARG"
+     n)
+	GEN_DIR=true
+	GEN_CA=false
+	GEN_CN=true
+	CLIENTS="$OPTARG"
         ;;
-	d)
+     d)
         DEBUG=true
         ;;
     h)
@@ -93,6 +102,18 @@ while getopts ":c:n:dh" opt; do
       ;;
   esac
 done
+
+
+PACKAGES='openssl'
+for package in $PACKAGES; do
+    if dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q "install ok installed"; then
+        echo "✅ Installed... $package"
+    else
+        echo "⚠️  $package is required and must be installed from your distro."
+        sudo apt update && sudo apt install -y "$package"
+    fi
+done
+
 
 if [ -z "$CLIENTS" ];then
 	echo "No Client hostname(s) found..."
@@ -132,8 +153,6 @@ if [ "$GEN_CA" = true ];then
 
 	echo " Create root CA certificate"
 	openssl req -x509 -new -nodes -key ca/ca.key -sha256 -days 1825 -out ca.crt -subj "/CN=MyRootCA"
-
-
 
 	### Server
 	# Generate server private key

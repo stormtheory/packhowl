@@ -10,6 +10,7 @@ common.py
 
 # Python Stuff
 __pycache__
+client/__pycache__
 core/__pycache__
 utils/__pycache__
 modules/__pycache__

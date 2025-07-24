@@ -52,7 +52,6 @@ else:
     PROMPT_EXIT = True
     print(f"\n Directory missing: {DATA_DIR}\n ")
 
-# Check if file exists
 if CERTS_DIR.is_dir():
     pass
 else:
