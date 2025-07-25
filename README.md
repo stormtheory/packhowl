@@ -2,7 +2,7 @@
   <img width="280" height="280" alt="Image" src="https://github.com/user-attachments/assets/9b9ceaa1-c694-4b55-869f-b0ff54954fe9" />
 </div>
 <h1 align="center">Pack Howl</h1>
-<h3 align="center">Secure voice and chat, only your Pack can hear.</h3>
+<h3 align="center">Secure voice and chat, only your Pack can hear. Since July 2025</h3>
 
 Encrypted, self-hosted, private voice + chat client and server written by StormTheory using Python3.7, PySide6, sounddevice, and opuslib encoder/decoder. 
 Focused on trusted group communications with mutual identity/auth TLS layers, so you know it is your Pack.
@@ -108,7 +108,32 @@ If there is interest in other Linux flavors/families please let me know or it's 
 	- Use firewalls to allow access to only the IPs you want to allow.
 	- Use firewalls to control the traffic to the servers port.
 	- Use a hostbased firewall or fail2ban to blocklist IPs of unwanted rate limits.
-  
+
+# Comparing to others
+| Feature                                   |     PackHowl       |        TeamSpeak              |
+|------------------------------------------ |------------------- |-------------------------------|
+| No Fees, even for over 32 connections     | ✅                 |  ❌                           |
+| No Login                                  | ✅                 |  ❌                           |
+| SPAM Free                                 | ✅                 |  ❌                           |
+| Tracker Free                              | ✅                 |  ❌                           |
+| Open Source                               | ✅                 |  ❌                           |
+| Military-Grade Encryption                 | ✅                 |  ✅                           |
+| Advanced Permission Controls              | ❌ Ask for it      |  ✅                           |
+| Offline / LAN Functionality               | ✅ Core Value      |  [✔] Have to login still      |
+| Host your own private server              | ✅ Core Value      |  [✔] Have to login still      |
+| Fully Customizable User Interface         | ✅ Open Source     |  [✔] To a limit               |
+| Anonymous Usage                           | ✅ Core Value      |  [✔] If trusted               |
+| In-Game Overlay                           | ❌                 |  ✅                           |
+| Codecs                                    | ✅ Opus            |  ✅  Opus                     |
+| Will Not Provide Your Data To 3rd Parties | ✅ Never collected |  [✔] If trusted, but collects |
+| Linux Only                                | ✅ Ask for more    |  ❌                           |
+| Minimal CPU Usage                         | ✅                 |  ✅                           |
+| Unlimited Sub-Channels                    | ❌ Ask for it      |  ✅                           |
+| Individual Volume Control                 | ❌ Ask for it      |  ✅                           |
+| Unlimited File Transfer                   | ❌ Ask for it      |  ✅                           |
+| Direct Messaging                          | ❌ Ask for it      |  ✅                           |
+| Gamepad and Joystick Hotkey Support       | ❌ In the works    |  ✅                           |
+| 
 
 # User Agreement:
 This project is not a company or business. By using this project’s works, scripts, or code know that you, out of respect are entitled to privacy to highest grade. This product will not try to steal, share, collect, or sell your information. However 3rd parties such at Github may try to use your data without your consent. Users or admins should make reports of issue(s) related to the project’s product to the project to better equip or fix issues for others who may run into the same issue(s). By using this project’s works, scripts, code, or ideas you as the end user or admin agree to the GPL-2.0 License statements and acknowledge the lack of Warranty. As always, give us a Star on Github if you find this useful, and come help us make it better.
