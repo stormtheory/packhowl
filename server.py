@@ -10,8 +10,8 @@ import argparse, asyncio, json, ssl, time, base64
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Dict
-from config import (SERVER_BIND, SSL_CERT_PATH, SSL_CA_PATH, MAX_USERS, CERTS_DIR, APP_NAME,CN_WHITELIST_PATH,
-                    ensure_data_dirs)
+from config import (SERVER_BIND, SSL_CERT_PATH, SSL_CA_PATH, MAX_USERS, CERTS_DIR, APP_NAME,
+                    CN_WHITELIST_PATH, SERVER_IP_BLOCK_DURATION, ensure_data_dirs)
 from config import SERVER_PORT as PORT
 import logging
 
@@ -102,6 +102,9 @@ class Server:
 
         # ── CN whitelist: Load from file ───────────────────────────────────────────
         self.cn_whitelist = set()
+        
+        self.blocked_ips: Dict[str, float] = {}  # IP → timestamp when block was set
+        self.block_duration = SERVER_IP_BLOCK_DURATION  # seconds (5 minutes block)
 
         if CN_WHITELIST_PATH.is_file():
             with CN_WHITELIST_PATH.open("r") as f:
@@ -160,12 +163,26 @@ class Server:
         cn = "UNKNOWN"
         try:
             peername = writer.get_extra_info("peername")[0]
+
+            # ── IP block check ─────────────────────────────────────────────────────────
+            now = time.time()
+            if peername in self.blocked_ips:
+                if now - self.blocked_ips[peername] < self.block_duration:
+                    self.log(f"[BLOCK] Connection denied from blocked IP {peername}")
+                    writer.close()
+                    await writer.wait_closed()
+                    return
+                else:
+                    # Auto-unblock expired IP
+                    del self.blocked_ips[peername]
+            
             cert = writer.get_extra_info("peercert")
             cn = cert["subject"][0][0][1] if cert else "UNKNOWN"
 
             # ── Enforce CN whitelist ───────────────────────────────────────────────────
             if cn not in self.cn_whitelist:
-                self.log(f"[DENY] Connection from CN '{cn}' not in whitelist")
+                self.blocked_ips[peername] = time.time()  # Add to temporary blocklist
+                self.log(f"[DENY] CN '{cn}' not in whitelist. Blocking IP {peername}")
                 writer.close()
                 await writer.wait_closed()
                 return
@@ -324,7 +341,7 @@ class Server:
             except (ConnectionResetError, BrokenPipeError):
                 self.clients.pop(cn, None)
 
-    # ── NEW: periodic watcher to reset TX after silence ──────────────────────
+    # ── periodic watcher to reset TX after silence ──────────────────────
     async def _voice_watcher(self):
         """Clears tx flag ~300 ms after last audio frame to keep indicator fresh."""
         while True:
@@ -337,6 +354,22 @@ class Server:
                     dirty = True
             if dirty:
                 await self.broadcast_user_list()
+                
+    # ── NEW: periodic IP‑blocklist cleaner ────────────────────────────────
+    async def _ip_blocklist_cleaner(self):
+        """
+        Periodically purge entries from self.blocked_ips once their
+        block duration has expired.  Keeps memory footprint tight and
+        avoids need for manual unblock after timeout.
+        """
+        while True:
+            await asyncio.sleep(60)          # run once a minute
+            now = time.time()
+            # keep only still‑valid blocks
+            self.blocked_ips = {
+                ip: ts for ip, ts in self.blocked_ips.items()
+                if now - ts < self.block_duration
+            }
 
     # ▒▒▒ util: logging ▒▒▒
     def log(self, *a) -> None:
@@ -358,8 +391,9 @@ class Server:
 
         #logging.debug(f"🔐 TLS version: {conn.version()}, cipher: {conn.cipher()}")
 
-        # ── NEW: launch voice activity watcher task ─────────────────────────
-        asyncio.create_task(self._voice_watcher())
+        # ── Kick off background maintenance tasks ──────────────────────────
+        asyncio.create_task(self._voice_watcher())       # keep “TX” state fresh
+        asyncio.create_task(self._ip_blocklist_cleaner())# auto‑purge IP blocks
 
         async with server:
             await server.serve_forever()
