@@ -11,6 +11,8 @@ CLIENTS=''
 user=packhowl
 user_home="/var/lib/${user}"
 DATA_DIR="${user_home}/.packhowl"
+CERTS_DIR="${DATA_DIR}/certs"
+WHITELIST="${CERTS_DIR}/cn_whitelist.txt"
 
 # See where we are working from and with
 if [[ "$(pwd)" == "/opt/"* ]]; then
@@ -138,6 +140,7 @@ if [ "$GEN_CA" = true ];then
 		rm -rf ca
 		rm -rf server
 		rm -rf client
+		rm $WHITELIST
 	fi
 
 	### Build Dir
@@ -145,6 +148,7 @@ if [ "$GEN_CA" = true ];then
 		mkdir ca
 		mkdir server
 		mkdir client
+		touch $WHITELIST
 	fi
 
 	### CA
@@ -188,12 +192,15 @@ if [ "$GEN_CN" = true ];then
 		
 		# Make PEM
 		cat client/$client.crt client/$client.key > client/$client.pem
-
+		echo "$client" >> $WHITELIST
+	
 	done
 
-	mkdir -p $DATA_DIR/certs
-	rm $DATA_DIR/certs/*
-	cp -v ca.pem server/*.pem client/*.pem $DATA_DIR/certs/
-
-	ls -l $DATA_DIR/certs/*
+	mkdir -p $CERTS_DIR
+	rm $CERTS_DIR/*.pem
+	
+	cp -v ca.pem server/*.pem client/*.pem $CERTS_DIR
+	
+	ls -l $CERTS_DIR/*
+	
 fi
