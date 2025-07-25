@@ -14,6 +14,17 @@ DATA_DIR="${user_home}/.packhowl"
 CERTS_DIR="${DATA_DIR}/certs"
 WHITELIST="${CERTS_DIR}/cn_whitelist.txt"
 
+if [ ! -d $user_home ];then
+	echo "ERROR: $user_home not found..."
+	exit 1
+elif [ ! -d $CERTS_DIR ];then
+        echo "ERROR: $CERTS_DIR not found..."
+        exit 1
+elif [ ! -d $DATA_DIR ];then
+        echo "ERROR: $DATA_DIR not found..."
+        exit 1
+fi
+
 # See where we are working from and with
 if [[ "$(pwd)" == "/opt/"* ]]; then
 	WORKING=/etc/ssl/packhowl
@@ -200,6 +211,8 @@ if [ "$GEN_CN" = true ];then
 	rm $CERTS_DIR/*.pem
 	
 	cp -v ca.pem server/*.pem client/*.pem $CERTS_DIR
+	chown -R $user:$user $CERTS_DIR
+	chmod 600 $CERTS_DIR/*
 	
 	ls -l $CERTS_DIR/*
 	
