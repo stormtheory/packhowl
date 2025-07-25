@@ -1,6 +1,6 @@
 #!/usr/bin/env python3.12
 """
-Silent Link – secure voice/chat server
+Pack Howl – secure voice/chat server
 • Async-io TLS server enforcing mutual authentication
 • Debug mode prints live user table
 • Drops clients with unknown certificates
@@ -10,7 +10,7 @@ import argparse, asyncio, json, ssl, time, base64
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Dict
-from config import (SERVER_BIND, SSL_CERT_PATH, SSL_CA_PATH, MAX_USERS, CERTS_DIR,
+from config import (SERVER_BIND, SSL_CERT_PATH, SSL_CA_PATH, MAX_USERS, CERTS_DIR, APP_NAME,
                     ensure_data_dirs)
 from config import SERVER_PORT as PORT
 import logging
@@ -163,6 +163,10 @@ class Server:
                 raw = await reader.readline()
                 if not raw:
                     break
+                if len(raw) > 4096:  # prevent large messages from consuming memory
+                    self.log(f"[ABUSE] Dropping {cn} - message too long")
+                    break
+
                 try:
                     msg = json.loads(raw.decode())
 
@@ -299,7 +303,7 @@ class Server:
             self.handle_client, SERVER_BIND, PORT, ssl=self.ssl_ctx
         )
         addr = ", ".join(str(sock.getsockname()) for sock in server.sockets)
-        self.log(f"[SILENT LINK] serving on {addr}")
+        self.log(f"[{APP_NAME}] serving on {addr}")
 
         #logging.debug(f"🔐 TLS version: {conn.version()}, cipher: {conn.cipher()}")
 
