@@ -52,8 +52,8 @@ show_help() {
 Usage: $(basename "$0") [OPTIONS]
 
 Options:
-  -c <client hostname(s)>  Generate CA and Client crts       
-  -n <client hostname>     Generate new Client certs
+  -c <client hostname(s)>  Generate CA and Client certs       
+  -n <client hostname>     Generate new Client cert
   -d                       Debug mode
   -h                       Show this help message
 

@@ -10,8 +10,6 @@ cd "$(dirname "$0")"
 ##### Runs the creating and installing of the virtual environment setup one time.
 
 APP='packhowl'
-PYENV_DIR='./.venv'
-RUN='.run_server_installed'
 
 # No running as root!
 ID=$(id -u)
@@ -19,14 +17,6 @@ if [ "$ID" == '0'  ];then
         echo "Not safe to run as root... exiting..."
         exit
 fi
-
-# See where we are working from and with
-if [[ "$(pwd)" == "/opt/"* ]]; then
-	PYENV_DIR="${HOME}/.venv-${APP}"
-else
-	PYENV_DIR='./.venv'
-fi
-
 
 # 🧾 Help text
 show_help() {
@@ -70,62 +60,10 @@ while getopts ":wldhc" opt; do
 done
 
 
-if [ ! -d $PYENV_DIR ];then
-        ENV_INSTALL=True
-        PIP_INSTALL=True
-elif [ -f $PYENV_DIR/$RUN ];then
-        echo "✅ Installed... $PYENV_DIR"
-        echo "✅ Installed... $RUN"
-        ENV_INSTALL=False
-        PIP_INSTALL=False
-elif [ ! -f $PYENV_DIR/$RUN ];then
-	echo "✅ Installed... $PYENV_DIR"
-        ENV_INSTALL=False
-        PIP_INSTALL=True
-else
-        exit 1
-fi
-
-if [ "$ENV_INSTALL" == 'True' ];then
-### Checking dependencies
-        
-PACKAGES='python3.12-venv python3.12-dev'
-for package in $PACKAGES; do
-    if dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q "install ok installed"; then
-        echo "✅ Installed... $package"
-    else
-        echo "⚠️  $package is required and must be installed from your distro."
-        sudo apt update && sudo apt install -y "$package"
-    fi
-done
-
-#### Build the Env Box	
-	# 1. Create a virtual environment
-		python3 -m venv $PYENV_DIR
-
-	# 2. Activate it
-		source $PYENV_DIR/bin/activate
-
-	# 3. Update
-		pip install --upgrade pip
-fi
-
-
-if [ "$PIP_INSTALL" == True ];then
-	### SERVER NEEDS
-        source $PYENV_DIR/bin/activate
-
-touch $PYENV_DIR/$RUN
-fi
-
-
 # 🛡️  Set safe defaults
 set -euo pipefail
 IFS=$'\n\t'
 
-
-#### Run the Box
-        source $PYENV_DIR/bin/activate
 
 if [ $DEBUG == true ];then
 	#### Export Variables

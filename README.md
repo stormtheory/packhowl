@@ -1,7 +1,7 @@
 # Pack Howl
 ### Secure voice and chat, only your Pack can hear.
 
-Encrypted, self-hosted, private voice + chat client and server written in Python 3.12 by StormTheory using PySide6, sounddevice, and opuslib encoder/decoder. Focused on trusted group communications with mutual identity/auth TLS layers, so you know it is your Pack.
+Encrypted, self-hosted, private voice + chat client and server written with Python 3.7+ by StormTheory using PySide6, sounddevice, and opuslib encoder/decoder. Focused on trusted group communications with mutual identity/auth TLS layers, so you know it is your Pack.
 
 Please submit all problems/issues/sugeestions to https://github.com/stormtheory/packhowl/issues
 
@@ -24,6 +24,7 @@ Short-term:
 - ✅ Getting a stable and tested product.
 - ✅ Adding a text sizing dropdown for chatbot text size.
 - ✅ Settings button, to re-run firsttime startup.
+- ✅ Debian installer.
 - [ ] Audio Tones for join, message alert, disconnect, and alerts
 
 Long-term:
@@ -46,21 +47,23 @@ If there is interest in other Linux flavors/families please let me know or it's 
 
 # INSTALL:
  Run scripts will create(if not present) or open the virtual Enviorment needed for AI tools to run.
- Note you will need at least 4G of /tmp space available for the first time startup install.
- Virtual environment may take up 7Gbs of space for all needed packages.
+ Note you will need at least 500Mb of /tmp space available for the first time startup install.
+ Virtual environment may take up 800Mb of space for all needed packages for client.
 
-1) Download the latest released .deb package file off of github and install on your system.
-2) Build DEB Install file:
-	
-	Download the zip file of the code, off of Github. This is found under the [<> Code] button on https://github.com/stormtheory/packhowl.
-	
-	Extract directory from the zip file. Run the build script in the directory. 
+1) Download the latest released .deb package file off of github at https://github.com/stormtheory/packhowl and install on your system.
 
-        ./build
+        # Create your SSL Certs for Encryption and Auth
+            # On the server:
+            cd /opt/packhowl
+            ./generate_keys.sh -n <client hostname(s)>
+            
+            # SSL Certs will automatically install on the server. 
+            # For the clients you will have to manually move the <hostname>.pem and ca.pem to the clients.
+            # The SSL certs can be found at /etc/ssl/packhowl/ or /var/lib/packhowl/.packhowl/certs/
+            # Move the 2 certs, <hostname>.pem and ca.pem to each of the clients.
+            # Only 2 is needed per client and each has there own .pem and a ca.pem. 
 
-   	Install the outputted .deb file.
-
-3) Install without Package Manager, run commands:
+2) Manual Install without Package Manager, run commands:
 
 	Download the zip file of the code, off of Github. This is found under the [<> Code] button on https://github.com/stormtheory/packhowl.
 
@@ -80,9 +83,12 @@ If there is interest in other Linux flavors/families please let me know or it's 
 # RUN:
 ### run the local Windowed App
 
+        /opt/packhowl/run_client.sh
 
 ### run the server
-
+    
+    When offical installed with the installer:
+    This is executed by the service packhowl.service who using the system user packhowl runs command /opt/packhowl/run_server.sh
 
 
 # User Agreement:
