@@ -118,13 +118,33 @@ fi
 if [ "$ENV_INSTALL" == 'True' ];then
 ### Checking dependencies
         
-PACKAGES='python3.12-venv python3.12-dev'
+# Get the major.minor version of the system's default python3
+PYTHON_VERSION=$(python3 -c 'import sys; v=sys.version_info; print(f"{v.major}.{v.minor}")')
+# Validate Python version (3.7+ required)
+PY_MAJOR=$(echo "$PYTHON_VERSION" | cut -d. -f1)
+PY_MINOR=$(echo "$PYTHON_VERSION" | cut -d. -f2)
+if [ "$PY_MAJOR" -ne 3 ] || [ "$PY_MINOR" -lt 7 ]; then
+    echo "❌ Python 3.7+ is required. Found Python $PYTHON_VERSION"
+    exit 1
+fi
+# Try versioned package names first
+PACKAGES="python${PYTHON_VERSION}-venv python${PYTHON_VERSION}-dev"
+
 for package in $PACKAGES; do
     if dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q "install ok installed"; then
         echo "✅ Installed... $package"
     else
-        echo "⚠️  $package is required and must be installed from your distro."
-        sudo apt update && sudo apt install -y "$package"
+        echo "⚠️  $package is not installed: $package"
+        echo "➡️  Attempting to install $package"
+        if ! sudo apt-get install -y "$package"; then
+            echo "⚠️  Failed to install $package — trying fallback: python3-venv or python3-dev"
+            fallback_pkg="python3-venv"
+            [ "$package" = "python${PYTHON_VERSION}-dev" ] && fallback_pkg="python3-dev"
+            sudo apt-get install -y "$fallback_pkg" || {
+                echo "❌ Failed to install fallback: $fallback_pkg"
+                exit 1
+            }
+        fi
     fi
 done
 
