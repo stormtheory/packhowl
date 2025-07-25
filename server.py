@@ -10,7 +10,7 @@ import argparse, asyncio, json, ssl, time, base64
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Dict
-from config import (SERVER_BIND, SSL_CERT_PATH, SSL_CA_PATH, MAX_USERS, CERTS_DIR, APP_NAME,
+from config import (SERVER_BIND, SSL_CERT_PATH, SSL_CA_PATH, MAX_USERS, CERTS_DIR, APP_NAME,CN_WHITELIST_PATH,
                     ensure_data_dirs)
 from config import SERVER_PORT as PORT
 import logging
@@ -44,23 +44,31 @@ if CERTS_DIR.is_dir():
     pass
 else:
     PROMPT_EXIT = True
-    print(f"\n Directory missing: {CERTS_DIR}\n ")
+    print(f"\n ERROR: Directory missing: {CERTS_DIR}\n ")
+
+if CN_WHITELIST_PATH.is_file():
+    pass
+else:
+    PROMPT_EXIT = True
+    print(f"\n \n ERROR: File missing: {CN_WHITELIST_PATH}")
+    print(f"\n This file is the whitelist for the hosts by hostname. \n It contains the list of allowed hostnames. \n \n Example file:\nclient1 \nclient2 \nclient3 \n")
     
 if SSL_CA_PATH.is_file():
     pass
 else:
     PROMPT_EXIT = True
-    print(f"\n \n File missing: {SSL_CA_PATH}")
+    print(f"\n \n ERROR: File missing: {SSL_CA_PATH}")
     print(f"\n This file: {SSL_CA_PATH} \n needs to be generated at the \n server and shared with this client in {CERTS_DIR} \n")
 
 if SSL_CERT_PATH.is_file():
     pass
 else:
     PROMPT_EXIT = True
-    print(f"\n \n File missing: {SSL_CERT_PATH}")
+    print(f"\n \n ERROR: File missing: {SSL_CERT_PATH}")
     print(f"\n This file: {SSL_CERT_PATH} \n needs to be generated at the \n server and shared with this client in {CERTS_DIR} \n")
     
 if PROMPT_EXIT is True:
+    print('Exiting...')
     exit()
 
 
@@ -91,6 +99,17 @@ class Server:
     def __init__(self, debug: bool = False):
         self.debug = debug
         self.clients: Dict[str, ClientInfo] = {}  # key = CN
+
+        # ── CN whitelist: Load from file ───────────────────────────────────────────
+        self.cn_whitelist = set()
+
+        if CN_WHITELIST_PATH.is_file():
+            with CN_WHITELIST_PATH.open("r") as f:
+                self.cn_whitelist = {line.strip() for line in f if line.strip()}
+            if self.debug:
+                self.log(f"[DEBUG] Loaded CN whitelist: {self.cn_whitelist}")
+        else:
+            self.log(f"[WARN] CN whitelist file missing: {CN_WHITELIST_PATH}")
 
         # --- Configure SSL context (server side, mutual TLS) --------------
         # 🔐 Create hardened TLS server context
@@ -143,6 +162,13 @@ class Server:
             peername = writer.get_extra_info("peername")[0]
             cert = writer.get_extra_info("peercert")
             cn = cert["subject"][0][0][1] if cert else "UNKNOWN"
+
+            # ── Enforce CN whitelist ───────────────────────────────────────────────────
+            if cn not in self.cn_whitelist:
+                self.log(f"[DENY] Connection from CN '{cn}' not in whitelist")
+                writer.close()
+                await writer.wait_closed()
+                return
 
             if len(self.clients) >= MAX_USERS:
                 writer.close()
