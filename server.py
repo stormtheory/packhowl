@@ -110,9 +110,9 @@ class Server:
             with CN_WHITELIST_PATH.open("r") as f:
                 self.cn_whitelist = {line.strip() for line in f if line.strip()}
             if self.debug:
-                self.log(f"[DEBUG] Loaded CN whitelist: {self.cn_whitelist}")
+                logging.debug(f"[DEBUG] Loaded CN whitelist: {self.cn_whitelist}")
         else:
-            self.log(f"[WARN] CN whitelist file missing: {CN_WHITELIST_PATH}")
+            logging.debug(f"[WARN] CN whitelist file missing: {CN_WHITELIST_PATH}")
 
         # --- Configure SSL context (server side, mutual TLS) --------------
         # 🔐 Create hardened TLS server context
@@ -168,9 +168,16 @@ class Server:
             now = time.time()
             if peername in self.blocked_ips:
                 if now - self.blocked_ips[peername] < self.block_duration:
-                    self.log(f"[BLOCK] Connection denied from blocked IP {peername}")
-                    writer.close()
-                    await writer.wait_closed()
+                    logging.info(f"[BLOCK] Connection denied from blocked IP {peername}")
+                    try:
+                        writer.close()
+                    except Exception:
+                        pass  # Already closing or invalid state
+
+                    try:
+                        await writer.wait_closed()
+                    except Exception:
+                        pass  # Avoid noisy SSL close_notify errors
                     return
                 else:
                     # Auto-unblock expired IP
@@ -182,19 +189,33 @@ class Server:
             # ── Enforce CN whitelist ───────────────────────────────────────────────────
             if cn not in self.cn_whitelist:
                 self.blocked_ips[peername] = time.time()  # Add to temporary blocklist
-                self.log(f"[DENY] CN '{cn}' not in whitelist. Blocking IP {peername}")
-                writer.close()
-                await writer.wait_closed()
+                logging.info(f"[DENY] CN '{cn}' not in whitelist. Blocking IP {peername}")
+                try:
+                    writer.close()
+                except Exception:
+                    pass  # Already closing or invalid state
+
+                try:
+                    await writer.wait_closed()
+                except Exception:
+                    pass  # Avoid noisy SSL close_notify errors
                 return
 
             if len(self.clients) >= MAX_USERS:
-                writer.close()
-                await writer.wait_closed()
+                try:
+                    writer.close()
+                except Exception:
+                    pass  # Already closing or invalid state
+
+                try:
+                    await writer.wait_closed()
+                except Exception:
+                    pass  # Avoid noisy SSL close_notify errors
                 return
 
             info = ClientInfo(reader=reader, writer=writer, cn=cn, ip=peername)
             self.clients[cn] = info
-            self.log(f"+ {cn} @ {peername}")
+            logging.info(f"+ {cn} @ {peername}")
 
             await self.broadcast_user_list()  # broadcast on new connection
 
@@ -228,14 +249,14 @@ class Server:
                 if not raw:
                     break
                 if len(raw) > 4096:  # prevent large messages from consuming memory
-                    self.log(f"[ABUSE] Dropping {cn} - message too long")
+                    logging.info(f"[ABUSE] Dropping {cn} - message too long")
                     break
 
                 try:
                     msg = json.loads(raw.decode())
                     
                     if not validate_msg(msg):    
-                        self.log(f"[ABUSE] Invalid json structure from {cn}")
+                        logging.info(f"[ABUSE] Invalid json structure from {cn}")
                         break
 
                     # Handle init message specially before broadcast
@@ -262,7 +283,7 @@ class Server:
                             await self.broadcast_user_list()                # push TX status
                             await self.broadcast(msg, exclude=cn)           # relay frame
                         else:
-                            self.log(f"[WARN] invalid audio msg from {cn}")
+                            logging.warning(f"[WARN] invalid audio msg from {cn}")
 
                     # ── NEW: mute/unmute message -------------------------------------------------
                     elif msg.get("type") == "muted":
@@ -275,12 +296,12 @@ class Server:
                         await self.broadcast(msg, exclude=cn)
 
                 except Exception as exc:
-                    self.log(f"[WARN] bad msg from {cn}: {exc}")
+                    logging.warning(f"[WARN] bad msg from {cn}: {exc}")
 
         except ssl.SSLError as e:
-            self.log(f"[TLS] {e}")
+            logging.debug(f"[TLS] {e}")
         except Exception as e:
-            self.log(f"[ERR] {e}")
+            logging.debug(f"[ERR] {e}")
         finally:
             # Clean-up client on disconnect
             self.clients.pop(cn, None)
@@ -294,12 +315,12 @@ class Server:
                 writer.close()
                 await writer.wait_closed()
             except Exception as e:
-                self.log(f"[WARN] Close error: {e}")
+                logging.debug(f"[WARN] Close error: {e}")
 
             # Broadcast updated user list after disconnect
             await self.broadcast_user_list()
 
-            self.log(f"- {cn}")
+            logging.info(f"- {cn}")
             if self.debug:
                 self.print_user_table()
 
@@ -326,7 +347,7 @@ class Server:
                 client.writer.write(message.encode())
                 await client.writer.drain()
             except Exception as e:
-                self.log(f"[WARN] Failed to send user list to {client.cn}: {e}")
+                logging.warning(f"[WARN] Failed to send user list to {client.cn}: {e}")
 
     # ▒▒▒ broadcast helper ▒▒▒
     async def broadcast(self, msg: dict, exclude: str | None = None) -> None:
@@ -387,7 +408,7 @@ class Server:
             self.handle_client, SERVER_BIND, PORT, ssl=self.ssl_ctx
         )
         addr = ", ".join(str(sock.getsockname()) for sock in server.sockets)
-        self.log(f"[{APP_NAME}] serving on {addr}")
+        logging.info(f"[{APP_NAME}] serving on {addr}")
 
         #logging.debug(f"🔐 TLS version: {conn.version()}, cipher: {conn.cipher()}")
 
