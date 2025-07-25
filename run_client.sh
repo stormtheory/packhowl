@@ -240,6 +240,9 @@ if [ "$PIP_INSTALL" == True ];then
         ### Encoding
         pip install opuslib
 
+        ### Gamepad Controls
+        #pip install pygame
+
 
 touch $PYENV_DIR/$RUN
 fi
@@ -257,10 +260,14 @@ fi
 
 if [ $LOOPBACK == true ];then
 	#### Export Variables
-		export PYTHONWARNINGS="ignore"
-	#### Run the AI
-		echo "Starting Client"
-		python3 client.py -l
+                export PYTHONWARNINGS="ignore"
+        #### Run the AI
+                echo "Starting Client"
+		if [ $DEBUG == true ];then
+			python3 client.py -ld
+		else
+			python3 client.py -l
+		fi
 		exit 0        
 elif [ $DEBUG == true ];then
 	#### Export Variables

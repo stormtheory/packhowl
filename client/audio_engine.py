@@ -466,7 +466,7 @@ class AudioEngine(QtCore.QObject):
         with self.lock:
             if self.ptt_pressed != pressed:
                 self.ptt_pressed = pressed
-                #logging.debug(f"[AudioEngine] PTT pressed set to: {pressed}")
+                logging.debug(f"[AudioEngine] PTT pressed set to: {pressed}")
 
 
     def set_loopback_enabled(self, enabled: bool):
