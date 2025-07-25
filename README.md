@@ -1,9 +1,8 @@
 <div align="center">
-  <img width="360" height="360" alt="Image" src="https://github.com/user-attachments/assets/a58f5727-a6df-4f68-9f42-bf550944ce33" />
+  <img width="280" height="280" alt="Image" src="https://github.com/user-attachments/assets/9b9ceaa1-c694-4b55-869f-b0ff54954fe9" />
 </div>
-
-# Pack Howl
-### Secure voice and chat, only your Pack can hear.
+<h1 align="center">Pack Howl</h1>
+<h3 align="center">Secure voice and chat, only your Pack can hear.</h3>
 
 Encrypted, self-hosted, private voice + chat client and server written by StormTheory using Python3.7, PySide6, sounddevice, and opuslib encoder/decoder. 
 Focused on trusted group communications with mutual identity/auth TLS layers, so you know it is your Pack.
@@ -38,9 +37,6 @@ Long-term:
 Upon Request:
 - Add YUM support.
 - Add AMD support.
-
-# Ultimate Goals
-- A free, private, fast, and easy audio/chat server that is self hosted and secure.
 
 # System Requirements:
 - Python3.7 or better.
