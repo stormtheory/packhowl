@@ -158,6 +158,27 @@ class Server:
             if self.debug:
                 self.print_user_table()
 
+            # ▒▒▒ JSON Checker ▒▒▒
+            def validate_msg(msg: dict) -> bool:
+                """Very basic message format validator."""
+                if "type" not in msg:
+                    return False
+
+                msg_type = msg["type"]
+
+                if msg_type == "init":
+                    return isinstance(msg.get("name"), str) and isinstance(msg.get("ip"), str)
+                elif msg_type == "status":
+                    return isinstance(msg.get("muted", False), bool) and isinstance(msg.get("spk_muted", False), bool)
+                elif msg_type == "audio":
+                    return isinstance(msg.get("data"), str)  # base64 encoded frame
+                elif msg_type == "muted":
+                    return isinstance(msg.get("value"), bool)
+                elif msg_type == "chat":
+                    return isinstance(msg.get("text"), str)
+                else:
+                    return False  # unknown type
+                
             # ── Protocol: line-delimited JSON messages ────────────────────
             while True:
                 raw = await reader.readline()
@@ -169,6 +190,10 @@ class Server:
 
                 try:
                     msg = json.loads(raw.decode())
+                    
+                    if not validate_msg(msg):    
+                        self.log(f"[ABUSE] Invalid json structure from {cn}")
+                        break
 
                     # Handle init message specially before broadcast
                     if msg.get("type") == "init":
