@@ -109,37 +109,10 @@ If there is interest in other Linux flavors/families please let me know or it's 
 	- Use firewalls to control the traffic to the servers port.
 	- Use a hostbased firewall or fail2ban to blocklist IPs of unwanted rate limits.
 
-# Comparing to others
-| Feature                                   |     PackHowl       |        TeamSpeak              |
-|------------------------------------------ |------------------- |-------------------------------|
-| No Fees, even for over 32 connections     | ✅                 |  ❌                           |
-| No Login                                  | ✅                 |  ❌                           |
-| SPAM Free                                 | ✅                 |  ❌                           |
-| Tracker Free                              | ✅                 |  ❌                           |
-| Open Source                               | ✅                 |  ❌                           |
-| Military-Grade Encryption                 | ✅                 |  ✅                           |
-| Advanced Permission Controls              | ❌ Ask for it      |  ✅                           |
-| Offline / LAN Functionality               | ✅ Core Value      |  [✔] Have to login still      |
-| Host your own private server              | ✅ Core Value      |  [✔] Have to login still      |
-| Fully Customizable User Interface         | ✅ Open Source     |  [✔] To a limit               |
-| Anonymous Usage                           | ✅ Core Value      |  [✔] If trusted               |
-| In-Game Overlay                           | ❌                 |  ✅                           |
-| Codecs                                    | ✅ Opus            |  ✅  Opus                     |
-| Will Not Provide Your Data To 3rd Parties | ✅ Never collected |  [✔] If trusted, but collects |
-| Linux Only                                | ✅ Ask for more    |  ❌                           |
-| Minimal CPU Usage                         | ✅                 |  ✅                           |
-| Unlimited Sub-Channels                    | ❌ Ask for it      |  ✅                           |
-| Individual Volume Control                 | ❌ Ask for it      |  ✅                           |
-| Unlimited File Transfer                   | ❌ Ask for it      |  ✅                           |
-| Direct Messaging                          | ❌                 |  ✅                           |
-| Gamepad and Joystick Hotkey Support       | ✅                 |  ✅                           |
-
-
 # User Agreement:
-This project is not a company or business. By using this project’s works, scripts, or code know that you, out of respect are entitled to privacy to highest grade. This product will not try to steal, share, collect, or sell your information. However 3rd parties such at Github may try to use your data without your consent. Users or admins should make reports of issue(s) related to the project’s product to the project to better equip or fix issues for others who may run into the same issue(s). By using this project’s works, scripts, code, or ideas you as the end user or admin agree to the GPL-2.0 License statements and acknowledge the lack of Warranty. As always, give us a Star on Github if you find this useful, and come help us make it better.
-
-As stated in the GPL-2.0 License:
-    "This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details." Also "ABSOLUTELY NO WARRANTY".
+This project is a community-driven initiative, not a company or commercial entity.
+By using this project’s code, scripts, or ideas, you are entitled to the highest degree of privacy and respect. This product does not collect, share, sell, or misuse your data. However, be aware that third parties such as GitHub may collect data independently without our control.
+If you encounter any issues or vulnerabilities, please report them to the project maintainers to help improve the product for everyone.
+By using this project’s resources, you agree to the terms of the GPL-2.0 License and acknowledge there is no warranty.
+If you find this project useful, please consider giving us a Star on GitHub and contribute to its improvement.
+Credit is appreciated but not required beyond respecting the open-source ethos.
