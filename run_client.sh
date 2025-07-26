@@ -241,7 +241,7 @@ if [ "$PIP_INSTALL" == True ];then
         pip install opuslib
 
         ### Gamepad Controls
-        #pip install pygame
+        pip install pygame
 
 
 touch $PYENV_DIR/$RUN
