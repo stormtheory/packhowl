@@ -17,6 +17,12 @@ from client.settings import Settings
 from config import (APP_NAME, APP_ICON_PATH, CLIENT_IP, SSL_CA_PATH, CERTS_DIR,
                     DATA_DIR, ensure_data_dirs)
 from config import SERVER_PORT as DEFAULT_SERVER_PORT
+from client.ptt import PTTManager
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument("-d", "--debug", action='store_true', help='Run GUI in debug mode')
+parser.add_argument("-l", "--loopback", action="store_true", help="Enable mic-to-speaker loopback at startup")
+args = parser.parse_args()
 
 logging.basicConfig(level=logging.DEBUG, format='%(levelname)s: %(message)s')
 
@@ -28,12 +34,20 @@ class MainWindow(QtWidgets.QMainWindow):
         self.settings = settings
         self.net = net_thread
         self.audio_engine = audio_engine
+        self.ptt_manager = PTTManager(settings, audio_engine)
+
         
         if self.audio_engine:
             self.audio_engine.inputLevel.connect(self.update_mic_level)
             self.audio_engine.outputLevel.connect(self.update_spk_level)
 
-        self.start_global_ptt_listener()
+        # Instantiate the PTT manager with settings and audio engine reference
+        self.ptt_manager = PTTManager(settings, audio_engine, parent=self)
+        self.ptt_manager.pttGamepadButtonLearned.connect(lambda idx: print(f"PTT button set to {idx}"))
+
+        # Connect signals if you want to trigger UI or logs
+        self.ptt_manager.pttPressed.connect(self.on_ptt_pressed)
+        self.ptt_manager.pttReleased.connect(self.on_ptt_released)
 
         # Create a central widget container for QMainWindow
         central_widget = QtWidgets.QWidget()
@@ -110,18 +124,6 @@ class MainWindow(QtWidgets.QMainWindow):
         
         main_layout.addLayout(top_layout)
 
-        
-        # The toolbar - Makes a toolbar
-        #self.toolbar = QtWidgets.QToolBar()
-        #self.addToolBar(self.toolbar)
-        # Settings button
-        #self.settings_btn = QtWidgets.QToolButton()
-        #self.settings_btn.setText("⚙")  # gear icon; or use QIcon(APP_ICON_PATH)
-        #self.settings_btn.setToolTip("Open Setup")
-        #self.settings_btn.clicked.connect(self.open_settings_dialog)
-        #self.toolbar.addWidget(self.settings_btn)
-
-        
         # Chat view widget
         self.chat_view = QtWidgets.QTextBrowser()
         right_layout.addWidget(self.chat_view, 3)
@@ -286,130 +288,43 @@ class MainWindow(QtWidgets.QMainWindow):
         self.update_server_label()
 
     # ── PTT ──────────────────────────────────────────────────
-    def install_ptt_key_filter(self):
-        ptt_key_str = self.settings.get("ptt_key", "LeftAlt")
-        key_map = {
-            "LeftAlt": Qt.Key_Alt,
-            "RightAlt": Qt.Key_Alt,
-            "LeftShift": Qt.Key_Shift,
-            "RightShift": Qt.Key_Shift,
-            "LeftCtrl": Qt.Key_Control,
-            "RightCtrl": Qt.Key_Control,
-            "Space": Qt.Key_Space,
-        }
-        self.ptt_key = key_map.get(ptt_key_str, Qt.Key_Alt)
-        self.ptt_pressed = False
-        self.installEventFilter(self)
-        
-    def start_global_ptt_listener(self):
-        """
-        Starts a daemon thread that listens for the configured PTT key
-        even when the application is not focused.
-        """
-        # ------------------------------------------------------------------
-        # 1. Resolve the key the user chose in settings
-        # ------------------------------------------------------------------
-        ptt_key_name = self.settings.get("ptt_key", "leftalt")   # e.g. "LeftAlt"
-        ptt_name_lc  = ptt_key_name.lower()
+    def on_ptt_pressed(self):
+        logging.debug("[GUI] PTT pressed signal received")
 
-        # map settings‑string → list of pynput Key objects (for non‑character keys)
-        special_map = {
-            "leftalt":   [keyboard.Key.alt_l],
-            "rightalt":  [keyboard.Key.alt_r],
-            "alt":       [keyboard.Key.alt, keyboard.Key.alt_l, keyboard.Key.alt_r],
-            "leftctrl":  [keyboard.Key.ctrl_l],
-            "rightctrl": [keyboard.Key.ctrl_r],
-            "ctrl":      [keyboard.Key.ctrl, keyboard.Key.ctrl_l, keyboard.Key.ctrl_r],
-            "leftshift": [keyboard.Key.shift_l],
-            "rightshift":[keyboard.Key.shift_r],
-            "shift":     [keyboard.Key.shift, keyboard.Key.shift_l, keyboard.Key.shift_r],
-            "space":     [keyboard.Key.space],
-            "f1":        [keyboard.Key.f1],
-            "f2":        [keyboard.Key.f2],
-            # … add more if you need them
-        }
+    def on_ptt_released(self):
+        logging.debug("[GUI] PTT released signal received")
 
-        # Character key?  (letters, numbers, etc.)
-        if ptt_name_lc not in special_map:
-            self._ptt_is_special   = False
-            self._ptt_char_expected = ptt_name_lc  # single lowercase char
-            self._ptt_special_keys  = []
-        else:
-            self._ptt_is_special   = True
-            self._ptt_char_expected = None
-            self._ptt_special_keys  = special_map[ptt_name_lc]
-
-        # ------------------------------------------------------------------
-        # 2. Helper to decide if the incoming pynput key matches PTT
-        # ------------------------------------------------------------------
-        def _matches_ptt(key) -> bool:
-            if self._ptt_is_special:
-                return key in self._ptt_special_keys
-            # character key
-            try:
-                return key.char and key.char.lower() == self._ptt_char_expected
-            except AttributeError:
-                return False    # key.char doesn't exist on special keys
-
-        # ------------------------------------------------------------------
-        # 3. Handlers
-        # ------------------------------------------------------------------
-        def on_press(key):
-            if _matches_ptt(key) and not self.ptt_pressed:
-                self.ptt_pressed = True
-                self.audio_engine.set_ptt_pressed(True)
-                logging.debug("[GlobalPTT] key pressed")
-
-        def on_release(key):
-            if _matches_ptt(key) and self.ptt_pressed:
-                self.ptt_pressed = False
-                self.audio_engine.set_ptt_pressed(False)
-                logging.debug("[GlobalPTT] key released")
-
-        # ------------------------------------------------------------------
-        # 4. Start the daemon listener
-        # ------------------------------------------------------------------
-        self.global_ptt_listener = keyboard.Listener(
-            on_press=on_press,
-            on_release=on_release,
-            suppress=False,      # do NOT block the key for other apps
-        )
-        self.global_ptt_listener.daemon = True
-        self.global_ptt_listener.start()
-        logging.info("[GlobalPTT] listener started")
-
+    # Your existing eventFilter can remain or call base class
     def eventFilter(self, obj, event):
-        if event.type() == QtCore.QEvent.KeyPress:
-            if event.key() == self.ptt_key and not self.ptt_pressed:
-                self.ptt_pressed = True
-                if self.audio_engine:
-                    self.audio_engine.set_ptt_pressed(True)
-                logging.debug(f"[GUI] PTT key pressed: {event.key()}")
-                return True  # Stop further handling
-        elif event.type() == QtCore.QEvent.KeyRelease:
-            if event.key() == self.ptt_key and self.ptt_pressed:
-                self.ptt_pressed = False
-                if self.audio_engine:
-                    self.audio_engine.set_ptt_pressed(False)
-                logging.debug(f"[GUI] PTT key released: {event.key()}")
-                return True  # Stop further handling
+        # Delegate to base implementation or customize further if needed
         return super().eventFilter(obj, event)
-
-
 
     # ── UI updates ───────────────────────────────────────────────────────
     
     def open_settings_dialog(self):
-        
         from client.first_run_settings import FirstRunDialog  # reuse the first-run dialog
-
-        dlg = FirstRunDialog()
+        dlg = FirstRunDialog(self.ptt_manager)
         
+        pttkey = self.settings.get("ptt_key")
+        if isinstance(pttkey, str):
+            pttkey = {"type": "keyboard", "key": pttkey}
+
+        if pttkey:
+            if pttkey.get("type") == "keyboard":
+                text = f"Keyboard: {pttkey.get('key')}"
+            elif pttkey.get("type") == "gamepad":
+                text = f"Gamepad: Button {pttkey.get('button')}"
+            else:
+                text = "(unknown)"
+        else:
+            text = "(none)"
+
+        dlg.ptt_label.setText(text)   
+                
         # Pre-fill with current settings
         dlg.name_edit.setText(self.settings["display_name"])
         dlg.ip_edit.setText(self.settings["server_ip"])
         dlg.port_edit.setText(str(self.settings["server_port"]))
-        dlg.ptt_combo.setCurrentText(self.settings["ptt_key"])
         dlg.mic_startup_combo.setCurrentText("on" if self.settings["mic_startup"] else "mute")
         dlg.spk_startup_combo.setCurrentText("on" if self.settings["spk_startup"] else "mute")
 
@@ -422,30 +337,74 @@ class MainWindow(QtWidgets.QMainWindow):
             self.settings["mic_startup"]  = dlg.mic_startup
             self.settings["spk_startup"]  = dlg.spk_startup
             self.settings.save()
-
-            import sys, subprocess
-            # Relaunch the application
-            python = sys.executable
-            script = sys.argv[0]
-            args = sys.argv[1:]
-            # You can pass through debug flags etc. by reusing sys.argv
-            subprocess.Popen([python, script] + args)
-            # Then exit the current instance
-            QtWidgets.QApplication.quit()
-            sys.exit(0)
+            self.show_status("Settings saved.")
+            
+        # Relaunch the application
+            #import sys, subprocess
+            #python = sys.executable
+            #script = sys.argv[0]
+            #args = sys.argv[1:]
+        # You can pass through debug flags etc. by reusing sys.argv
+            #subprocess.Popen([python, script] + args)
+        # Then exit the current instance
+            #QtWidgets.QApplication.quit()
+            #sys.exit(0)
+            
+        # Restart app after 1 second delay
+            self.restart_app(delay_ms=2500)
+            
+        # Shutdown the application
+            #import sys, subprocess
+        # Then exit the current instance
+            #QtWidgets.QApplication.quit()
+            #sys.exit(0)
 
             ###### Doing a Reload and NOT trying this update for now.
             # Push updates to subsystems
-            self.net.update_settings(self.settings)
-            self.audio_engine.update_settings(self.settings)
-            self.update_settings(self.settings)
-
-            self.show_status("Settings updated.")
+            #self.net.update_settings(self.settings)
+            #self.audio_engine.update_settings(self.settings)
+            #self.update_settings(self.settings)
+            #self.show_status("Settings updated.")
+            
 
     def update_settings(self, settings: Settings):
         self.server_ip = settings.get("server_ip", "127.0.0.1")
         self.server_port = settings.get("server_port", DEFAULT_SERVER_PORT)
+        #self.settings.get("display_name")
         self.update_server_label()
+        
+    def restart_app(self, delay_ms=1000):
+        """
+        Clean up, then restart the app after delay_ms milliseconds.
+        """
+        self.hide()
+        self.cleanup()
+        QtCore.QTimer.singleShot(delay_ms, self._do_restart)
+
+    def _do_restart(self):
+        import sys, subprocess
+        python = sys.executable
+        script = sys.argv[0]
+        args = sys.argv[1:]
+        subprocess.Popen([python, script] + args)
+        QtWidgets.QApplication.quit()
+        sys.exit(0)
+
+    def cleanup(self):
+        import sys
+        # Your existing cleanup logic here
+        if hasattr(self, "global_ptt_listener"):
+            self.global_ptt_listener.stop()
+        if getattr(self, "global_ptt_listener", None):
+            self.global_ptt_listener.stop()
+        print('Stopping Listener')
+        self.ptt_manager.stop_global_ptt_listener()
+        self.audio_engine.stop()
+        self.net.stop()
+        self.net.wait()
+        if getattr(sys.modules.get("__main__"), "args", None) and sys.modules["__main__"].args.debug:
+            import threading
+            logging.debug("Active threads:", threading.enumerate())
     
     def _chat_font_size_changed(self, size_str):
         size = int(size_str)
@@ -658,7 +617,13 @@ class MainWindow(QtWidgets.QMainWindow):
             self.global_ptt_listener.stop()
         if getattr(self, "global_ptt_listener", None):
             self.global_ptt_listener.stop()
+        print('Stopping Listener')
+        self.ptt_manager.stop_global_ptt_listener()
         self.audio_engine.stop()
         self.net.stop()
         self.net.wait()
+        if args.debug:
+            import threading
+            logging.debug("Active threads:", threading.enumerate())
+
 
