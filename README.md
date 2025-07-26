@@ -58,7 +58,11 @@ If there is interest in other Linux flavors/families please let me know or it's 
         # Create your SSL Certs for Encryption and Auth
             # On the server:
                  cd /opt/packhowl
-                 ./generate_keys.sh -n <client hostname(s)>
+                 chmod 700
+                 # If new PackHowl SSL certs are needed, will overwrite
+                   ./generate_keys.sh -n <client hostname(s)>
+                 # If adding hostnames
+                   ./generate_keys.sh -a <client hostname(s)>
             
     - SSL Certs will automatically install on the server. 
     - For the clients you will have to manually move the <hostname>.pem and ca.pem to the clients.
@@ -72,7 +76,7 @@ If there is interest in other Linux flavors/families please let me know or it's 
             # Script will create data directory. Place SSL certs in the directory and named the way in the output message.
 
 
-2) Manual Install without Package Manager, run commands:
+3) Manual Install without Package Manager, run commands:
 
 	Download the zip file of the code, off of Github. This is found under the [<> Code] button on https://github.com/stormtheory/packhowl.
 
