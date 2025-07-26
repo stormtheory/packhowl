@@ -18,6 +18,11 @@ from config import (APP_NAME, APP_ICON_PATH, CLIENT_IP, SSL_CA_PATH, CERTS_DIR,
                     DATA_DIR, ensure_data_dirs)
 from config import SERVER_PORT as DEFAULT_SERVER_PORT
 from client.ptt import PTTManager
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument("-d", "--debug", action='store_true', help='Run GUI in debug mode')
+parser.add_argument("-l", "--loopback", action="store_true", help="Enable mic-to-speaker loopback at startup")
+args = parser.parse_args()
 
 logging.basicConfig(level=logging.DEBUG, format='%(levelname)s: %(message)s')
 
@@ -39,10 +44,6 @@ class MainWindow(QtWidgets.QMainWindow):
         # Instantiate the PTT manager with settings and audio engine reference
         self.ptt_manager = PTTManager(settings, audio_engine, parent=self)
         self.ptt_manager.pttGamepadButtonLearned.connect(lambda idx: print(f"PTT button set to {idx}"))
-
-
-        # Install PTTManager as event filter on the main window (or relevant widget)
-        #self.installEventFilter(self.ptt_manager)
 
         # Connect signals if you want to trigger UI or logs
         self.ptt_manager.pttPressed.connect(self.on_ptt_pressed)
@@ -123,18 +124,6 @@ class MainWindow(QtWidgets.QMainWindow):
         
         main_layout.addLayout(top_layout)
 
-        
-        # The toolbar - Makes a toolbar
-        #self.toolbar = QtWidgets.QToolBar()
-        #self.addToolBar(self.toolbar)
-        # Settings button
-        #self.settings_btn = QtWidgets.QToolButton()
-        #self.settings_btn.setText("⚙")  # gear icon; or use QIcon(APP_ICON_PATH)
-        #self.settings_btn.setToolTip("Open Setup")
-        #self.settings_btn.clicked.connect(self.open_settings_dialog)
-        #self.toolbar.addWidget(self.settings_btn)
-
-        
         # Chat view widget
         self.chat_view = QtWidgets.QTextBrowser()
         right_layout.addWidget(self.chat_view, 3)
@@ -348,30 +337,74 @@ class MainWindow(QtWidgets.QMainWindow):
             self.settings["mic_startup"]  = dlg.mic_startup
             self.settings["spk_startup"]  = dlg.spk_startup
             self.settings.save()
-
-            import sys, subprocess
-            # Relaunch the application
-            python = sys.executable
-            script = sys.argv[0]
-            args = sys.argv[1:]
-            # You can pass through debug flags etc. by reusing sys.argv
-            subprocess.Popen([python, script] + args)
-            # Then exit the current instance
-            QtWidgets.QApplication.quit()
-            sys.exit(0)
+            self.show_status("Settings saved.")
+            
+        # Relaunch the application
+            #import sys, subprocess
+            #python = sys.executable
+            #script = sys.argv[0]
+            #args = sys.argv[1:]
+        # You can pass through debug flags etc. by reusing sys.argv
+            #subprocess.Popen([python, script] + args)
+        # Then exit the current instance
+            #QtWidgets.QApplication.quit()
+            #sys.exit(0)
+            
+        # Restart app after 1 second delay
+            self.restart_app(delay_ms=1000)
+            
+        # Shutdown the application
+            #import sys, subprocess
+        # Then exit the current instance
+            #QtWidgets.QApplication.quit()
+            #sys.exit(0)
 
             ###### Doing a Reload and NOT trying this update for now.
             # Push updates to subsystems
-            self.net.update_settings(self.settings)
-            self.audio_engine.update_settings(self.settings)
-            self.update_settings(self.settings)
-
-            self.show_status("Settings updated.")
+            #self.net.update_settings(self.settings)
+            #self.audio_engine.update_settings(self.settings)
+            #self.update_settings(self.settings)
+            #self.show_status("Settings updated.")
+            
 
     def update_settings(self, settings: Settings):
         self.server_ip = settings.get("server_ip", "127.0.0.1")
         self.server_port = settings.get("server_port", DEFAULT_SERVER_PORT)
+        #self.settings.get("display_name")
         self.update_server_label()
+        
+    def restart_app(self, delay_ms=500):
+        """
+        Clean up, then restart the app after delay_ms milliseconds.
+        """
+        self.hide()
+        self.cleanup()
+        QtCore.QTimer.singleShot(delay_ms, self._do_restart)
+
+    def _do_restart(self):
+        import sys, subprocess
+        python = sys.executable
+        script = sys.argv[0]
+        args = sys.argv[1:]
+        subprocess.Popen([python, script] + args)
+        QtWidgets.QApplication.quit()
+        sys.exit(0)
+
+    def cleanup(self):
+        import sys
+        # Your existing cleanup logic here
+        if hasattr(self, "global_ptt_listener"):
+            self.global_ptt_listener.stop()
+        if getattr(self, "global_ptt_listener", None):
+            self.global_ptt_listener.stop()
+        print('Stopping Listener')
+        self.ptt_manager.stop_global_ptt_listener()
+        self.audio_engine.stop()
+        self.net.stop()
+        self.net.wait()
+        if getattr(sys.modules.get("__main__"), "args", None) and sys.modules["__main__"].args.debug:
+            import threading
+            logging.debug("Active threads:", threading.enumerate())
     
     def _chat_font_size_changed(self, size_str):
         size = int(size_str)
@@ -584,8 +617,13 @@ class MainWindow(QtWidgets.QMainWindow):
             self.global_ptt_listener.stop()
         if getattr(self, "global_ptt_listener", None):
             self.global_ptt_listener.stop()
+        print('Stopping Listener')
         self.ptt_manager.stop_global_ptt_listener()
         self.audio_engine.stop()
         self.net.stop()
         self.net.wait()
+        if args.debug:
+            import threading
+            logging.debug("Active threads:", threading.enumerate())
+
 

@@ -62,6 +62,7 @@ class PTTManager(QtCore.QObject):
         even when the application is not focused.
         This uses the `pynput` library for global keyboard hooks.
         """
+        self.stop_global_ptt_listener()
 
         # ──────────────────────────────────────────────
         # 1. Load and normalize PTT key from flat settings
@@ -283,6 +284,7 @@ class PTTManager(QtCore.QObject):
                         time.sleep(0.01)
             finally:
                 # Always restart the global listener once learning is done
+                self.global_ptt_listener.stop()
                 self.start_global_ptt_listener()
                 logging.info("[PTT] Global listener restarted after learning input.")
 
@@ -295,9 +297,9 @@ class PTTManager(QtCore.QObject):
         if hasattr(self, 'global_ptt_listener') and self.global_ptt_listener:
             try:
                 self.global_ptt_listener.stop()
-                logging.info("[GlobalPTT] Listener stopped")
+                logging.info("[PTT Init] Previous global listener stopped.")
             except Exception as e:
-                logging.warning(f"[GlobalPTT] Failed to stop listener: {e}")
+                logging.warning(f"[PTT Init] Error stopping previous listener: {e}")
             self.global_ptt_listener = None
 
     def _matches_ptt(self, input_event):

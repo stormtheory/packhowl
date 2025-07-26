@@ -268,7 +268,7 @@ class NetworkThread(QtCore.QThread):
             self.server_port = new_port
             self.status.emit("[INFO] Server settings changed, reconnecting...")
             self._need_reconnect = True
-
+    
     def reconnect(self):
         """
         Restart the connection with the updated server IP and port.

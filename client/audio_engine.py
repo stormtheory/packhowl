@@ -104,7 +104,9 @@ class AudioEngine(QtCore.QObject):
         self.lock = threading.Lock()
 
     def update_settings(self, settings: Settings):
-        self._loopback_enabled = settings.get("mic_startup", False)
+        print('Updating Audio Engine Settings')
+        #mic_startup = self.settings.get("mic_startup", True)
+        #spk_startup = self.settings.get("spk_startup", True)
     
     def _status(self, msg: str):
         """
