@@ -351,7 +351,7 @@ class MainWindow(QtWidgets.QMainWindow):
             #sys.exit(0)
             
         # Restart app after 1 second delay
-            self.restart_app(delay_ms=1000)
+            self.restart_app(delay_ms=2500)
             
         # Shutdown the application
             #import sys, subprocess
@@ -373,7 +373,7 @@ class MainWindow(QtWidgets.QMainWindow):
         #self.settings.get("display_name")
         self.update_server_label()
         
-    def restart_app(self, delay_ms=500):
+    def restart_app(self, delay_ms=1000):
         """
         Clean up, then restart the app after delay_ms milliseconds.
         """
