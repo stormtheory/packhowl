@@ -13,21 +13,7 @@ from config import SERVER_PORT as DEFAULT_SERVER_PORT
 
 class FirstRunDialog(QtWidgets.QDialog):
     """Ask for Display Name, Server IP, and Port on first launch."""
-    def __init__(self):
-        PTT_KEY_OPTIONS = [
-            "leftalt",
-            "rightalt",
-            "alt",
-            "leftctrl",
-            "rightctrl",
-            "ctrl",
-            "leftshift",
-            "rightshift",
-            "shift",
-            "space",
-            "f1",
-            "f2"
-        ]
+    def __init__(self, ptt_manager):
         MIC_STARTUP_OPTIONS = [
             "mute",
             "on"
@@ -39,23 +25,32 @@ class FirstRunDialog(QtWidgets.QDialog):
         super().__init__()
         self.setWindowTitle(f"{APP_NAME} – Setup")
         form = QtWidgets.QFormLayout(self)
+        self.ptt_manager = ptt_manager
+
 
         self.name_edit = QtWidgets.QLineEdit()
         self.ip_edit = QtWidgets.QLineEdit()
         self.port_edit = QtWidgets.QLineEdit(str(DEFAULT_SERVER_PORT))
-        self.ptt_combo = QtWidgets.QComboBox()
-        self.ptt_combo.addItems(PTT_KEY_OPTIONS)
         self.mic_startup_combo = QtWidgets.QComboBox()
         self.mic_startup_combo.addItems(MIC_STARTUP_OPTIONS)
         self.spk_startup_combo = QtWidgets.QComboBox()
         self.spk_startup_combo.addItems(SPK_STARTUP_OPTIONS)
 
+        # PTT LISTENER
+        self.ptt_listen_btn = QtWidgets.QPushButton("Set PTT Key/Button")
+        self.ptt_label = QtWidgets.QLabel("(none)")
+        self.ptt_label.setStyleSheet("font-style: italic; color: gray;")
+        # Horizontal layout for button + current value
+        ptt_layout = QtWidgets.QHBoxLayout()
+        ptt_layout.addWidget(self.ptt_listen_btn)
+        ptt_layout.addWidget(self.ptt_label)
+
         form.addRow("Display Name:", self.name_edit)
         form.addRow("Server IP:", self.ip_edit)
         form.addRow("Server Port:", self.port_edit)
-        form.addRow("Push-To-Talk Key:", self.ptt_combo)
         form.addRow("Mic at App Startup:", self.mic_startup_combo)
         form.addRow("Speaker at App Startup:", self.spk_startup_combo)
+        form.addRow("Push-To-Talk Key:", ptt_layout)
 
         self.save_btn = QtWidgets.QPushButton("Save and Reload App")
         self.save_btn.clicked.connect(self.accept)
@@ -66,6 +61,8 @@ class FirstRunDialog(QtWidgets.QDialog):
         self.name_edit.textChanged.connect(self.validate)
         self.ip_edit.textChanged.connect(self.validate)
         self.port_edit.textChanged.connect(self.validate)
+        self.ptt_listen_btn.clicked.connect(self.listen_for_ptt_input)
+
         
         self.validate()
 
@@ -113,11 +110,7 @@ class FirstRunDialog(QtWidgets.QDialog):
         except ValueError:
             pass
         return None
-    
-    @property
-    def ptt_key(self) -> str:
-        return self.ptt_combo.currentText()
-    
+        
     @property
     def mic_startup(self) -> bool:
         return self.mic_startup_combo.currentText().lower() == "on" # True value
@@ -125,3 +118,33 @@ class FirstRunDialog(QtWidgets.QDialog):
     @property
     def spk_startup(self) -> bool:
         return self.spk_startup_combo.currentText().lower() == "on" # True value
+    
+    @property
+    def ptt_key(self) -> dict:
+        return self.ptt_manager.ptt_key  # unified {'type': ..., 'key': ...}
+    
+    def listen_for_ptt_input(self):
+        self.ptt_listen_btn.setEnabled(False)
+        self.ptt_label.setText("Listening...")
+        self.ptt_label.setStyleSheet("color: orange; font-style: italic;")
+
+        def on_learned(trigger):
+            input_type = trigger.get("type")
+            if input_type == "keyboard":
+                display = f"Keyboard: {trigger['key']}"
+            elif input_type == "gamepad":
+                display = f"Gamepad: Button {trigger['button']}"
+            else:
+                display = "(invalid input)"
+
+            self.ptt_label.setText(display)
+            self.ptt_label.setStyleSheet("color: green; font-style: normal;")
+            self.ptt_listen_btn.setEnabled(True)
+
+        # Connect your PTTManager's signal to update this dialog
+        self.ptt_manager.pttInputLearned.connect(on_learned)
+
+        # Start listening for input
+        self.ptt_manager.listen_for_next_input()
+
+

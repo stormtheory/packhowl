@@ -4,8 +4,13 @@ from PySide6 import QtCore
 from PySide6.QtCore import Qt
 import logging
 from pynput import keyboard
+import time
+import pygame
+import threading
 
 logging.basicConfig(level=logging.DEBUG, format='%(levelname)s: %(message)s')
+
+PYGAME_AVAILABLE = True
 
 class PTTManager(QtCore.QObject):
     """
@@ -19,6 +24,9 @@ class PTTManager(QtCore.QObject):
     # Signals emitted when PTT is pressed/released
     pttPressed = QtCore.Signal()
     pttReleased = QtCore.Signal()
+    pttGamepadButtonLearned = QtCore.Signal(int)  # emits new button index
+    pttInputLearned = QtCore.Signal(dict)
+        
 
     def __init__(self, settings, audio_engine=None, parent=None):
         super().__init__(parent)
@@ -31,14 +39,6 @@ class PTTManager(QtCore.QObject):
         self.start_global_ptt_listener()
 
     def install_ptt_key_filter(self):
-        # Disabled: Do not install global event filter
-        """
-        Installs the PTT key filter for GUI key events.
-
-        Maps a user-configured key string from settings to a Qt.Key
-        and prepares the object for Qt event filtering.
-        """
-        ptt_key_str = self.settings.get("ptt_key", "LeftAlt")
         key_map = {
             "LeftAlt": Qt.Key_Alt,
             "RightAlt": Qt.Key_Alt,
@@ -47,28 +47,67 @@ class PTTManager(QtCore.QObject):
             "LeftCtrl": Qt.Key_Control,
             "RightCtrl": Qt.Key_Control,
             "Space": Qt.Key_Space,
+            # Add more if needed
         }
-        self.ptt_key = key_map.get(ptt_key_str, Qt.Key_Alt)
+        self.ptt_key_qt = self.settings.get("ptt_key_qt", "LeftAlt")
+        self.ptt_key = key_map.get(self.ptt_key_qt, Qt.Key_Alt)
         self.ptt_pressed = False
+        logging.debug(f"[PTT] Installed GUI PTT key filter for: {self.ptt_key_qt}")
 
-        # Install this instance as event filter on the application/window
-        # Note: The caller must call `installEventFilter(ptt_manager_instance)`
-        # on the relevant Qt object, e.g. main window
-        logging.debug(f"[PTT] Installed PTT key filter for key: {self.ptt_key}")
+
 
     def start_global_ptt_listener(self):
         """
         Starts a daemon thread that listens for the configured PTT key
         even when the application is not focused.
-
         This uses the `pynput` library for global keyboard hooks.
         """
 
-        # ------------------------------------------------------------------
-        # 1. Resolve the key the user chose in settings
-        # ------------------------------------------------------------------
-        ptt_key_name = self.settings.get("ptt_key", "leftalt")   # e.g. "LeftAlt"
-        ptt_name_lc  = ptt_key_name.lower()
+        # ──────────────────────────────────────────────
+        # 1. Load and normalize PTT key from flat settings
+        # ──────────────────────────────────────────────
+        ptt_type = self.settings.get("ptt_key_type", "keyboard")
+        ptt_code = self.settings.get("ptt_key_code", "alt_l")
+        ptt_qt = self.settings.get("ptt_key_qt", "LeftAlt")
+
+        # Compose internal ptt_key dict for pynput listener
+        self.ptt_key = {
+            "type": ptt_type,
+            "key": ptt_code.lower() if isinstance(ptt_code, str) else str(ptt_code)
+        }
+
+        # Store Qt key string for GUI event filter separately
+        self.ptt_key_qt = ptt_qt
+
+        logging.debug(f"[GlobalPTT] Loaded ptt_key: {self.ptt_key}, ptt_key_qt: {self.ptt_key_qt}")
+
+        # Only support keyboard type for global listener currently
+        if self.ptt_key.get('type') != 'keyboard':
+            logging.info("[GlobalPTT] Not starting listener — PTT is not a keyboard type.")
+            return
+
+        # Normalize key to string form
+        key = self.ptt_key.get('key')
+        if isinstance(key, keyboard.Key):
+            normalized_key = key.name.lower() if key.name else ""
+        elif isinstance(key, str):
+            normalized_key = key.lower()
+        else:
+            normalized_key = ""
+
+        self.ptt_key['key'] = normalized_key  # ← force internal standard
+
+        logging.debug(f"[GlobalPTT] Normalized key to: {normalized_key}")
+
+        # Normalize key name for lookup
+        key = self.ptt_key['key']
+        if isinstance(key, keyboard.Key):
+            ptt_name_lc = key.name.lower() if key.name else ""  # e.g. 'alt_l'
+        elif isinstance(key, str):
+            ptt_name_lc = key.lower()
+        else:
+            ptt_name_lc = ""
+
 
         # map settings‑string → list of pynput Key objects (for non‑character keys)
         special_map = {
@@ -113,12 +152,13 @@ class PTTManager(QtCore.QObject):
         # 3. Handlers
         # ------------------------------------------------------------------
         def on_press(key):
-            if _matches_ptt(key) and not self.ptt_pressed:
+            if self._matches_ptt({'type': 'keyboard', 'key': key}) and not self.ptt_pressed:
                 self.ptt_pressed = True
                 if self.audio_engine:
                     self.audio_engine.set_ptt_pressed(True)
                 logging.debug("[GlobalPTT] key pressed")
                 self.pttPressed.emit()
+
 
         def on_release(key):
             if _matches_ptt(key) and self.ptt_pressed:
@@ -165,4 +205,129 @@ class PTTManager(QtCore.QObject):
                 self.pttReleased.emit()
                 return True  # Stop further handling
 
+        return False
+    
+    def listen_for_next_input(self):
+        """
+        Enters learn mode: captures the next keyboard or gamepad input and sets it as the PTT trigger.
+        Stops global PTT listener temporarily to prevent leaking X connections.
+        """
+        def _learn():
+            logging.info("[PTT] Waiting for next keyboard/gamepad input…")
+
+            # Stop any existing listener to avoid too many X connections
+            self.stop_global_ptt_listener()
+
+            import pygame
+            pygame.init()
+            pygame.joystick.init()
+            joystick = pygame.joystick.Joystick(0) if pygame.joystick.get_count() > 0 else None
+            if joystick:
+                joystick.init()
+
+            from pynput import keyboard as pkb
+
+            try:
+                with pkb.Events() as events:
+                    while True:
+                        try:
+                            event = events.get(0.01)  # Non-blocking wait
+                            if isinstance(event, pkb.Events.Press):
+                                key = event.key
+
+                                # Extract normalized key name:
+                                if isinstance(key, pkb.Key):
+                                    # Special keys like ctrl_l, alt_l, etc.
+                                    key_name = key.name if key.name else str(key).lower()
+                                elif hasattr(key, 'char') and key.char:
+                                    # Character keys (letters, numbers, etc.)
+                                    key_name = key.char.lower()
+                                else:
+                                    # Fallback
+                                    key_name = str(key).lower()
+
+                                # Save flat string settings, avoid saving pynput objects
+                                self.settings['ptt_key_type'] = 'keyboard'
+                                self.settings['ptt_key_code'] = key_name
+
+                                # Compose internal dict for runtime use
+                                self.ptt_key = {
+                                    'type': 'keyboard',
+                                    'key': key_name
+                                }
+
+                                if hasattr(self.settings, "save"):
+                                    self.settings.save()
+
+                                logging.info(f"[PTT] Learned keyboard key: {key_name}")
+                                self.pttInputLearned.emit(self.ptt_key)
+
+                                break
+                        except Exception as ex:
+                            logging.warning(f"[PTT] Exception during learning keyboard input: {ex}")
+
+                        # Gamepad check
+                        pygame.event.pump()
+                        if joystick:
+                            for button_index in range(joystick.get_numbuttons()):
+                                if joystick.get_button(button_index):
+                                    self.ptt_key = {'type': 'gamepad', 'button': button_index}
+                                    self.settings['ptt_key_type'] = 'gamepad'
+                                    self.settings['ptt_key_code'] = str(button_index)
+                                    if hasattr(self.settings, "save"):
+                                        self.settings.save()
+                                    logging.info(f"[PTT] Learned gamepad button: {button_index}")
+                                    self.pttInputLearned.emit(self.ptt_key)
+                                    return
+
+                        time.sleep(0.01)
+            finally:
+                # Always restart the global listener once learning is done
+                self.start_global_ptt_listener()
+                logging.info("[PTT] Global listener restarted after learning input.")
+
+        threading.Thread(target=_learn, daemon=True).start()
+
+
+
+    def stop_global_ptt_listener(self):
+        """Stop the pynput global listener if it’s running."""
+        if hasattr(self, 'global_ptt_listener') and self.global_ptt_listener:
+            try:
+                self.global_ptt_listener.stop()
+                logging.info("[GlobalPTT] Listener stopped")
+            except Exception as e:
+                logging.warning(f"[GlobalPTT] Failed to stop listener: {e}")
+            self.global_ptt_listener = None
+
+    def _matches_ptt(self, input_event):
+        """
+        Safely checks if the incoming input matches the stored PTT trigger.
+        Returns False if the stored trigger is invalid.
+        """
+        """
+            Checks if the incoming input matches the configured PTT trigger.
+            `input_event` should be a dict like:
+            {'type': 'keyboard', 'key': 'a'}
+            {'type': 'keyboard', 'key': keyboard.Key.alt_l}
+            {'type': 'gamepad', 'button': 0}
+            """
+        if not isinstance(self.ptt_key, dict):
+            return False
+
+        if input_event['type'] != self.ptt_key.get('type'):
+            return False
+
+        if input_event['type'] == 'keyboard':
+            input_key = input_event['key']
+            input_key_name = (
+                input_key.name if isinstance(input_key, keyboard.Key) else str(input_key).lower()
+            )
+            logging.debug(f"[PTT] Comparing input '{input_key_name}' to expected '{self.ptt_key.get('key')}'")
+            return input_key_name == self.ptt_key.get('key')
+
+        if input_event['type'] == 'gamepad':
+            logging.debug(f"[PTT] Comparing input '{input_key_name}' to expected '{self.ptt_key.get('key')}'")
+            return input_event['button'] == self.ptt_key.get('button')
+            
         return False

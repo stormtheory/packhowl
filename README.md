@@ -131,9 +131,9 @@ If there is interest in other Linux flavors/families please let me know or it's 
 | Unlimited Sub-Channels                    | ❌ Ask for it      |  ✅                           |
 | Individual Volume Control                 | ❌ Ask for it      |  ✅                           |
 | Unlimited File Transfer                   | ❌ Ask for it      |  ✅                           |
-| Direct Messaging                          | ❌ Ask for it      |  ✅                           |
-| Gamepad and Joystick Hotkey Support       | ❌ In the works    |  ✅                           |
-| 
+| Direct Messaging                          | ❌                 |  ✅                           |
+| Gamepad and Joystick Hotkey Support       | ✅                 |  ✅                           |
+
 
 # User Agreement:
 This project is not a company or business. By using this project’s works, scripts, or code know that you, out of respect are entitled to privacy to highest grade. This product will not try to steal, share, collect, or sell your information. However 3rd parties such at Github may try to use your data without your consent. Users or admins should make reports of issue(s) related to the project’s product to the project to better equip or fix issues for others who may run into the same issue(s). By using this project’s works, scripts, code, or ideas you as the end user or admin agree to the GPL-2.0 License statements and acknowledge the lack of Warranty. As always, give us a Star on Github if you find this useful, and come help us make it better.

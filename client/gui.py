@@ -29,6 +29,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.settings = settings
         self.net = net_thread
         self.audio_engine = audio_engine
+        self.ptt_manager = PTTManager(settings, audio_engine)
+
         
         if self.audio_engine:
             self.audio_engine.inputLevel.connect(self.update_mic_level)
@@ -36,6 +38,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Instantiate the PTT manager with settings and audio engine reference
         self.ptt_manager = PTTManager(settings, audio_engine, parent=self)
+        self.ptt_manager.pttGamepadButtonLearned.connect(lambda idx: print(f"PTT button set to {idx}"))
+
 
         # Install PTTManager as event filter on the main window (or relevant widget)
         #self.installEventFilter(self.ptt_manager)
@@ -296,10 +300,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
     # ── PTT ──────────────────────────────────────────────────
     def on_ptt_pressed(self):
-        logging.debug("GUI PTT pressed signal received")
+        logging.debug("[GUI] PTT pressed signal received")
 
     def on_ptt_released(self):
-        logging.debug("GUI PTT released signal received")
+        logging.debug("[GUI] PTT released signal received")
 
     # Your existing eventFilter can remain or call base class
     def eventFilter(self, obj, event):
@@ -309,16 +313,29 @@ class MainWindow(QtWidgets.QMainWindow):
     # ── UI updates ───────────────────────────────────────────────────────
     
     def open_settings_dialog(self):
-        
         from client.first_run_settings import FirstRunDialog  # reuse the first-run dialog
-
-        dlg = FirstRunDialog()
+        dlg = FirstRunDialog(self.ptt_manager)
         
+        pttkey = self.settings.get("ptt_key")
+        if isinstance(pttkey, str):
+            pttkey = {"type": "keyboard", "key": pttkey}
+
+        if pttkey:
+            if pttkey.get("type") == "keyboard":
+                text = f"Keyboard: {pttkey.get('key')}"
+            elif pttkey.get("type") == "gamepad":
+                text = f"Gamepad: Button {pttkey.get('button')}"
+            else:
+                text = "(unknown)"
+        else:
+            text = "(none)"
+
+        dlg.ptt_label.setText(text)   
+                
         # Pre-fill with current settings
         dlg.name_edit.setText(self.settings["display_name"])
         dlg.ip_edit.setText(self.settings["server_ip"])
         dlg.port_edit.setText(str(self.settings["server_port"]))
-        dlg.ptt_combo.setCurrentText(self.settings["ptt_key"])
         dlg.mic_startup_combo.setCurrentText("on" if self.settings["mic_startup"] else "mute")
         dlg.spk_startup_combo.setCurrentText("on" if self.settings["spk_startup"] else "mute")
 
@@ -567,6 +584,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.global_ptt_listener.stop()
         if getattr(self, "global_ptt_listener", None):
             self.global_ptt_listener.stop()
+        self.ptt_manager.stop_global_ptt_listener()
         self.audio_engine.stop()
         self.net.stop()
         self.net.wait()
